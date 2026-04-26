@@ -304,21 +304,32 @@ async def update_bill_statuses(db: AsyncSession, user_id: uuid.UUID) -> int:
 async def delete_bill_template(db: AsyncSession, template: BillTemplate) -> None:
     """Permanently delete a template and all associated data (CASCADE: instances, payments, attachments, rules)."""
     import os
+    import logging
     from app.services.gdrive_service import delete_from_drive
 
-    instances_result = await db.execute(
-        select(BillInstance).where(BillInstance.bill_template_id == template.id)
-    )
-    for instance in instances_result.scalars().all():
-        payments_result = await db.execute(
-            select(Payment).options(joinedload(Payment.attachments)).where(Payment.bill_instance_id == instance.id)
-        )
-        for payment in payments_result.scalars().unique().all():
-            for att in payment.attachments:
-                await delete_from_drive(att.file_path)
-                if os.path.exists(att.file_path):
-                    os.remove(att.file_path)
+    logger = logging.getLogger(__name__)
 
+    # Delete attachment files (Drive or local) before CASCADE delete
+    try:
+        instances_result = await db.execute(
+            select(BillInstance).where(BillInstance.bill_template_id == template.id)
+        )
+        for instance in instances_result.scalars().all():
+            payments_result = await db.execute(
+                select(Payment).options(joinedload(Payment.attachments)).where(Payment.bill_instance_id == instance.id)
+            )
+            for payment in payments_result.scalars().unique().all():
+                for att in payment.attachments:
+                    try:
+                        await delete_from_drive(att.file_path)
+                    except Exception as e:
+                        logger.warning("Failed to delete Drive file %s: %s", att.file_path, e)
+                    if os.path.exists(att.file_path):
+                        os.remove(att.file_path)
+    except Exception as e:
+        logger.warning("Error cleaning up files for template %s: %s", template.id, e)
+
+    # CASCADE delete handles DB records
     await db.delete(template)
     await db.flush()
 

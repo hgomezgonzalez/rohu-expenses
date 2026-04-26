@@ -103,11 +103,18 @@ export default function TemplatesPage() {
 
   const [deleteTarget, setDeleteTarget] = useState<BillTemplate | null>(null);
 
+  const [deleteError, setDeleteError] = useState("");
+
   async function confirmDelete() {
     if (!deleteTarget) return;
-    await deleteBillTemplate(deleteTarget.id);
-    setDeleteTarget(null);
-    await loadData();
+    setDeleteError("");
+    try {
+      await deleteBillTemplate(deleteTarget.id);
+      setDeleteTarget(null);
+      await loadData();
+    } catch (err: any) {
+      setDeleteError(err.message || "Error al eliminar la plantilla");
+    }
   }
 
   async function openNotifConfig(templateId: string) {
@@ -381,11 +388,11 @@ export default function TemplatesPage() {
       <ConfirmModal
         open={!!deleteTarget}
         title="Eliminar plantilla"
-        message={deleteTarget ? `¿Eliminar "${deleteTarget.name}" definitivamente?\n\nSe borrarán todas las facturas, pagos y evidencias asociadas.` : ""}
+        message={deleteTarget ? `¿Eliminar "${deleteTarget.name}" definitivamente?\n\nSe borrarán todas las facturas, pagos y evidencias asociadas.${deleteError ? `\n\n⚠️ ${deleteError}` : ""}` : ""}
         type="danger"
         confirmLabel="Eliminar"
         onConfirm={confirmDelete}
-        onClose={() => setDeleteTarget(null)}
+        onClose={() => { setDeleteTarget(null); setDeleteError(""); }}
       />
     </div>
   );
