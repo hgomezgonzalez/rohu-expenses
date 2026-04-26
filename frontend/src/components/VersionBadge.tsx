@@ -1,7 +1,7 @@
 "use client";
 
-const VERSION = "v0.2.0";
-const BUILD_DATE = process.env.NEXT_PUBLIC_BUILD_DATE || new Date().toISOString().slice(0, 16).replace("T", " ");
+const VERSION = "v0.3.0";
+const BUILD_DATE = process.env.NEXT_PUBLIC_BUILD_DATE || "";
 
 export default function VersionBadge() {
   return (

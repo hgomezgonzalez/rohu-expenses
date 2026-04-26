@@ -13,11 +13,14 @@ from app.models.bill_instance import BillInstance, BillStatus
 from app.models.bill_template import BillTemplate
 from app.models.notification_rule import NotificationRule
 from app.models.notification_log import NotificationLog
+from app.models.income_entry import IncomeEntry, IncomeEntryStatus
+from app.models.income_source import IncomeSource
 from app.models.user import User
 from app.models.user_settings import UserSettings
 from app.services.notification_service import (
     send_email_with_settings, send_telegram_with_settings,
     build_reminder_email, build_reminder_telegram,
+    build_income_reminder_email, build_income_reminder_telegram,
 )
 
 logger = logging.getLogger(__name__)
@@ -138,6 +141,81 @@ async def check_and_send_reminders():
                     if success:
                         sent_count += 1
 
+        # --- Income unconfirmed reminders ---
+        income_sent = await _check_unconfirmed_income(db, settings_cache, today)
+        sent_count += income_sent
+
         await db.commit()
-        logger.info("Reminder check complete. Sent %d notifications.", sent_count)
+        logger.info("Reminder check complete. Sent %d notifications (including %d income).", sent_count, income_sent)
         return sent_count
+
+
+MAX_INCOME_REMINDERS = 3
+
+
+async def _check_unconfirmed_income(
+    db: AsyncSession, settings_cache: dict, today: date
+) -> int:
+    """Send reminders for unconfirmed income entries past their expected day."""
+    sent_count = 0
+
+    # Find unconfirmed entries for current month where expected day has passed
+    result = await db.execute(
+        select(IncomeEntry)
+        .join(IncomeSource, IncomeEntry.income_source_id == IncomeSource.id, isouter=True)
+        .where(
+            IncomeEntry.year == today.year,
+            IncomeEntry.month == today.month,
+            IncomeEntry.status == IncomeEntryStatus.EXPECTED.value,
+            IncomeEntry.unconfirmed_reminder_count < MAX_INCOME_REMINDERS,
+        )
+    )
+    entries = list(result.scalars().all())
+
+    for entry in entries:
+        # Determine the expected day (from source or default to 1)
+        day_of_month = 1
+        if entry.income_source and entry.income_source.day_of_month:
+            day_of_month = entry.income_source.day_of_month
+
+        # Only remind if we're past the expected day + 1 grace day
+        if today.day <= day_of_month + 1:
+            continue
+
+        # Load user settings
+        user_id_str = str(entry.user_id)
+        if user_id_str not in settings_cache:
+            us_result = await db.execute(
+                select(UserSettings).where(UserSettings.user_id == entry.user_id)
+            )
+            settings_cache[user_id_str] = us_result.scalars().first()
+
+        user_settings = settings_cache.get(user_id_str)
+        if not user_settings:
+            continue
+
+        # Load user for email
+        user_result = await db.execute(select(User).where(User.id == entry.user_id))
+        user = user_result.scalars().first()
+        if not user:
+            continue
+
+        amount = f"${entry.expected_amount:,.0f}"
+        subject = f"💵 Ingreso pendiente - {entry.name}"
+
+        # Send via telegram first, then email
+        if user_settings.telegram_enabled:
+            msg = build_income_reminder_telegram(entry.name, amount, day_of_month)
+            success = await send_telegram_with_settings(user_settings, msg)
+            if success:
+                sent_count += 1
+
+        if user_settings.email_enabled:
+            html = build_income_reminder_email(entry.name, amount, day_of_month)
+            success = await send_email_with_settings(user_settings, user.email, subject, html)
+            if success:
+                sent_count += 1
+
+        entry.unconfirmed_reminder_count += 1
+
+    return sent_count

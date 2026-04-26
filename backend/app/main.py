@@ -9,6 +9,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from app.core.config import settings
 from app.api.v1.router import api_router
 from app.jobs.notification_jobs import check_and_send_reminders
+from app.jobs.income_jobs import generate_monthly_income_entries
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -27,8 +28,17 @@ async def lifespan(app: FastAPI):
         id="daily_reminders",
         replace_existing=True,
     )
+    scheduler.add_job(
+        generate_monthly_income_entries,
+        "cron",
+        day=1,
+        hour=0,
+        minute=30,
+        id="monthly_income_generation",
+        replace_existing=True,
+    )
     scheduler.start()
-    logger.info("Scheduler started - daily reminders at 08:00")
+    logger.info("Scheduler started - daily reminders at 08:00, income generation on 1st at 00:30")
     yield
     # Shutdown
     scheduler.shutdown()
@@ -37,7 +47,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="ROHU PayControl API",
     description="API para control de gastos y pagos mensuales. Nunca más se te pasa un pago.",
-    version="0.2.0",
+    version="0.3.0",
     docs_url="/docs",
     redoc_url="/redoc",
     lifespan=lifespan,
@@ -58,4 +68,4 @@ app.include_router(api_router, prefix=settings.api_prefix)
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "app": settings.app_name, "version": "0.2.0"}
+    return {"status": "healthy", "app": settings.app_name, "version": "0.3.0"}

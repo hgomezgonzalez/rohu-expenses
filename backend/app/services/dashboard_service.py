@@ -1,4 +1,5 @@
 import uuid
+from datetime import date
 from decimal import Decimal
 
 from sqlalchemy import select, func
@@ -9,14 +10,93 @@ from app.models.bill_instance import BillInstance, BillStatus
 from app.models.payment import Payment
 from app.models.category import Category
 from app.models.income_source import IncomeSource
+from app.models.income_entry import IncomeEntry, IncomeEntryStatus
 from app.schemas.dashboard import (
     DashboardSummary,
     DashboardFull,
     BudgetVarianceItem,
     BudgetVarianceResponse,
     CashflowForecast,
+    IncomeBreakdown,
+    IncomeVarianceItem,
+    IncomeVarianceSummary,
 )
 from app.schemas.bill import BillInstanceResponse, CategoryResponse
+from app.schemas.income_entry import IncomeEntryResponse
+
+
+async def _get_monthly_income(
+    db: AsyncSession, user_id: uuid.UUID, year: int, month: int
+) -> tuple[Decimal, Decimal, Decimal, list[IncomeBreakdown], list[IncomeEntry]]:
+    """Get monthly income data. Returns (total, confirmed, expected, breakdown, entries).
+
+    If income_entries exist for the month, uses those.
+    Otherwise falls back to income_sources templates (for current/future months).
+    """
+    result = await db.execute(
+        select(IncomeEntry).where(
+            IncomeEntry.user_id == user_id,
+            IncomeEntry.year == year,
+            IncomeEntry.month == month,
+        )
+    )
+    entries = list(result.scalars().all())
+
+    if entries:
+        total = Decimal("0")
+        confirmed = Decimal("0")
+        expected = Decimal("0")
+        breakdown = []
+
+        for e in entries:
+            if e.status == IncomeEntryStatus.CANCELLED.value:
+                continue
+            effective = e.actual_amount if e.actual_amount is not None else e.expected_amount
+            total += effective
+            if e.status == IncomeEntryStatus.CONFIRMED.value:
+                confirmed += e.actual_amount or Decimal("0")
+            else:
+                expected += e.expected_amount
+            breakdown.append(IncomeBreakdown(
+                source_id=str(e.income_source_id) if e.income_source_id else None,
+                source_name=e.name,
+                expected_amount=e.expected_amount,
+                actual_amount=e.actual_amount,
+                effective_amount=effective,
+                status=e.status,
+                is_one_time=e.is_one_time,
+            ))
+
+        return total, confirmed, expected, breakdown, entries
+
+    # Fallback: use income_sources templates (current/future months without entries)
+    today = date.today()
+    is_past = (year < today.year) or (year == today.year and month < today.month)
+    if is_past:
+        return Decimal("0"), Decimal("0"), Decimal("0"), [], []
+
+    result = await db.execute(
+        select(IncomeSource).where(
+            IncomeSource.user_id == user_id,
+            IncomeSource.is_active == True,
+        )
+    )
+    sources = list(result.scalars().all())
+    total = sum(s.amount for s in sources)
+    breakdown = [
+        IncomeBreakdown(
+            source_id=str(s.id),
+            source_name=s.name,
+            expected_amount=s.amount,
+            actual_amount=None,
+            effective_amount=s.amount,
+            status="template_fallback",
+            is_one_time=False,
+        )
+        for s in sources
+    ]
+
+    return total, Decimal("0"), total, breakdown, []
 
 
 async def get_dashboard_summary(
@@ -151,6 +231,28 @@ async def get_budget_variance(
     # Sort by absolute variance descending (biggest deviations first)
     items.sort(key=lambda x: abs(x.variance_amount), reverse=True)
 
+    # Income variance summary
+    total_income, income_confirmed, income_expected, breakdown, _ = await _get_monthly_income(
+        db, user_id, year, month
+    )
+    income_sources_variance = []
+    for b in breakdown:
+        actual = b.actual_amount if b.actual_amount is not None else Decimal("0")
+        income_sources_variance.append(IncomeVarianceItem(
+            source_name=b.source_name,
+            expected_amount=b.expected_amount,
+            actual_amount=b.actual_amount,
+            variance_amount=actual - b.expected_amount if b.actual_amount is not None else Decimal("0"),
+            status=b.status,
+        ))
+
+    income_summary = IncomeVarianceSummary(
+        total_expected=income_expected + income_confirmed,
+        total_confirmed=income_confirmed,
+        total_variance=income_confirmed - (income_expected + income_confirmed) if income_confirmed else Decimal("0"),
+        sources=income_sources_variance,
+    )
+
     return BudgetVarianceResponse(
         year=year,
         month=month,
@@ -158,21 +260,16 @@ async def get_budget_variance(
         total_actual=total_actual,
         total_variance=total_budget - total_actual,
         items=items,
+        income_summary=income_summary,
     )
 
 
 async def get_cashflow_forecast(
     db: AsyncSession, user_id: uuid.UUID, year: int, month: int
 ) -> CashflowForecast:
-    # Get income sources
-    result = await db.execute(
-        select(IncomeSource).where(
-            IncomeSource.user_id == user_id,
-            IncomeSource.is_active == True,
-        )
+    total_income, income_confirmed, income_expected, breakdown, _ = await _get_monthly_income(
+        db, user_id, year, month
     )
-    income_sources = result.scalars().all()
-    total_income = sum(s.amount for s in income_sources)
 
     # Get bill instances with payments
     result = await db.execute(
@@ -203,6 +300,9 @@ async def get_cashflow_forecast(
         year=year,
         month=month,
         total_income=total_income,
+        income_confirmed=income_confirmed,
+        income_expected=income_expected,
+        income_breakdown=breakdown,
         total_paid=total_paid,
         total_pending=total_pending,
         projected_balance=projected_balance,
@@ -261,18 +361,24 @@ async def get_full_dashboard(
         overdue_bills=overdue_bills, due_soon_bills=due_soon_bills, upcoming_bills=upcoming_bills,
     )
 
-    # Cashflow from same data + income (1 extra query)
-    inc_result = await db.execute(
-        select(IncomeSource).where(IncomeSource.user_id == user_id, IncomeSource.is_active == True)
+    # Income from entries (1 extra query)
+    total_income, income_confirmed, income_expected, breakdown, entries = await _get_monthly_income(
+        db, user_id, year, month
     )
-    total_income = sum(s.amount for s in inc_result.scalars().all())
     cf_pending = total_pending + total_overdue
     projected = total_income - total_paid_amount - cf_pending
 
     cashflow = CashflowForecast(
         year=year, month=month, total_income=total_income,
+        income_confirmed=income_confirmed, income_expected=income_expected,
+        income_breakdown=breakdown,
         total_paid=total_paid_amount, total_pending=cf_pending,
         projected_balance=projected, is_negative=projected < 0,
     )
 
-    return DashboardFull(summary=summary, cashflow=cashflow, bills=all_bills)
+    income_responses = [IncomeEntryResponse.model_validate(e) for e in entries]
+
+    return DashboardFull(
+        summary=summary, cashflow=cashflow,
+        income_entries=income_responses, bills=all_bills,
+    )

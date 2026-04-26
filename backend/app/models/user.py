@@ -33,3 +33,4 @@ class User(Base):
     # Relationships
     bill_templates = relationship("BillTemplate", back_populates="user", lazy="selectin")
     income_sources = relationship("IncomeSource", back_populates="user", lazy="selectin")
+    income_entries = relationship("IncomeEntry", back_populates="user", lazy="selectin")

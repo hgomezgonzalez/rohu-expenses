@@ -9,6 +9,7 @@ from app.api.v1.deps import get_current_user
 from app.models.user import User
 from app.models.income_source import IncomeSource
 from app.schemas.income_source import IncomeSourceCreate, IncomeSourceUpdate, IncomeSourceResponse
+from app.services.income_service import update_expected_amount_on_source_change
 
 router = APIRouter(prefix="/income-sources", tags=["income-sources"])
 
@@ -59,9 +60,16 @@ async def update_income_source(
     if not source:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Income source not found")
 
-    for key, value in data.model_dump(exclude_unset=True).items():
+    update_data = data.model_dump(exclude_unset=True)
+    old_amount = source.amount
+    for key, value in update_data.items():
         setattr(source, key, value)
     await db.flush()
+
+    # If amount changed, update expected entries for current month
+    if "amount" in update_data and update_data["amount"] != old_amount:
+        await update_expected_amount_on_source_change(db, source, source.amount)
+
     await db.refresh(source)
     return source
 

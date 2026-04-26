@@ -217,6 +217,43 @@ export async function deleteIncomeSource(id: string) {
   return request<void>(`/income-sources/${id}`, { method: "DELETE" });
 }
 
+// Income Entries (monthly instances)
+export async function generateIncomeEntries(year: number, month: number) {
+  return request<IncomeGenerateResult>(
+    `/income-entries/generate?year=${year}&month=${month}`,
+    { method: "POST" }
+  );
+}
+
+export async function getIncomeEntries(year: number, month: number) {
+  return request<IncomeEntry[]>(`/income-entries?year=${year}&month=${month}`);
+}
+
+export async function createIncomeEntry(data: IncomeEntryCreate) {
+  return request<IncomeEntry>("/income-entries", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function confirmIncomeEntry(id: string, data: IncomeEntryConfirm) {
+  return request<IncomeEntry>(`/income-entries/${id}/confirm`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateIncomeEntry(id: string, data: Partial<{ actual_amount: number; status: string; notes: string }>) {
+  return request<IncomeEntry>(`/income-entries/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteIncomeEntry(id: string) {
+  return request<void>(`/income-entries/${id}`, { method: "DELETE" });
+}
+
 // Bill Template update
 export async function updateBillTemplate(id: string, data: Partial<BillTemplateCreate> & { is_active?: boolean }) {
   return request<BillTemplate>(`/bills/templates/${id}`, {
@@ -236,6 +273,7 @@ export interface IncomeSource {
   name: string;
   amount: number;
   day_of_month: number;
+  income_type: string;
   is_active: boolean;
   notes: string | null;
   created_at: string;
@@ -245,7 +283,54 @@ export interface IncomeSourceCreate {
   name: string;
   amount: number;
   day_of_month: number;
+  income_type?: string;
   notes?: string;
+}
+
+export interface IncomeEntry {
+  id: string;
+  income_source_id: string | null;
+  year: number;
+  month: number;
+  name: string;
+  expected_amount: number;
+  actual_amount: number | null;
+  status: "expected" | "confirmed" | "cancelled";
+  is_one_time: boolean;
+  received_at: string | null;
+  notes: string | null;
+  created_at: string;
+  effective_amount: number;
+}
+
+export interface IncomeEntryCreate {
+  name: string;
+  expected_amount: number;
+  year: number;
+  month: number;
+  notes?: string;
+}
+
+export interface IncomeEntryConfirm {
+  actual_amount: number;
+  received_at?: string;
+  notes?: string;
+}
+
+export interface IncomeGenerateResult {
+  generated: number;
+  skipped: number;
+  entries: IncomeEntry[];
+}
+
+export interface IncomeBreakdown {
+  source_id: string | null;
+  source_name: string;
+  expected_amount: number;
+  actual_amount: number | null;
+  effective_amount: number;
+  status: string;
+  is_one_time: boolean;
 }
 
 export interface Category {
@@ -298,6 +383,7 @@ export interface BillInstance {
 export interface DashboardFullResponse {
   summary: DashboardSummary;
   cashflow: CashflowForecast;
+  income_entries: IncomeEntry[];
   bills: BillInstance[];
 }
 
@@ -336,6 +422,9 @@ export interface CashflowForecast {
   year: number;
   month: number;
   total_income: number;
+  income_confirmed: number;
+  income_expected: number;
+  income_breakdown: IncomeBreakdown[];
   total_paid: number;
   total_pending: number;
   projected_balance: number;

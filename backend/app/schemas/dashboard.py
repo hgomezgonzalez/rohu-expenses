@@ -1,14 +1,19 @@
 from decimal import Decimal
+from typing import Annotated
 
-from pydantic import BaseModel
+from pydantic import BaseModel, PlainSerializer
 
 from app.schemas.bill import BillInstanceResponse
+from app.schemas.income_entry import IncomeEntryResponse
+
+# Serialize Decimal as float for JSON (frontend expects numbers, not strings)
+Num = Annotated[Decimal, PlainSerializer(lambda v: float(v), return_type=float)]
 
 
 class DashboardSummary(BaseModel):
-    total_pending: Decimal
-    total_paid: Decimal
-    total_overdue: Decimal
+    total_pending: Num
+    total_paid: Num
+    total_overdue: Num
     count_pending: int
     count_paid: int
     count_overdue: int
@@ -21,32 +26,62 @@ class DashboardSummary(BaseModel):
 class BudgetVarianceItem(BaseModel):
     category_name: str
     category_slug: str
-    budget_amount: Decimal
-    actual_paid: Decimal
-    variance_amount: Decimal
-    variance_percentage: Decimal
+    budget_amount: Num
+    actual_paid: Num
+    variance_amount: Num
+    variance_percentage: Num
+
+
+class IncomeVarianceItem(BaseModel):
+    source_name: str
+    expected_amount: Num
+    actual_amount: Num | None
+    variance_amount: Num
+    status: str
+
+
+class IncomeVarianceSummary(BaseModel):
+    total_expected: Num
+    total_confirmed: Num
+    total_variance: Num
+    sources: list[IncomeVarianceItem]
 
 
 class BudgetVarianceResponse(BaseModel):
     year: int
     month: int
-    total_budget: Decimal
-    total_actual: Decimal
-    total_variance: Decimal
+    total_budget: Num
+    total_actual: Num
+    total_variance: Num
     items: list[BudgetVarianceItem]
+    income_summary: IncomeVarianceSummary | None = None
+
+
+class IncomeBreakdown(BaseModel):
+    source_id: str | None
+    source_name: str
+    expected_amount: Num
+    actual_amount: Num | None
+    effective_amount: Num
+    status: str
+    is_one_time: bool
 
 
 class CashflowForecast(BaseModel):
     year: int
     month: int
-    total_income: Decimal
-    total_paid: Decimal
-    total_pending: Decimal
-    projected_balance: Decimal
+    total_income: Num
+    income_confirmed: Num
+    income_expected: Num
+    income_breakdown: list[IncomeBreakdown]
+    total_paid: Num
+    total_pending: Num
+    projected_balance: Num
     is_negative: bool
 
 
 class DashboardFull(BaseModel):
     summary: DashboardSummary
     cashflow: CashflowForecast
+    income_entries: list[IncomeEntryResponse]
     bills: list[BillInstanceResponse]

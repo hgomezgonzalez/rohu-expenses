@@ -1,0 +1,104 @@
+import uuid
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.database import get_db
+from app.api.v1.deps import get_current_user
+from app.models.user import User
+from app.schemas.income_entry import (
+    IncomeEntryCreate,
+    IncomeEntryConfirm,
+    IncomeEntryUpdate,
+    IncomeEntryResponse,
+    IncomeGenerateResult,
+)
+from app.services.income_service import (
+    generate_income_entries,
+    get_income_entries,
+    create_one_time_entry,
+    confirm_income_entry,
+    update_income_entry,
+    delete_income_entry,
+)
+
+router = APIRouter(prefix="/income-entries", tags=["income-entries"])
+
+
+@router.post("/generate", response_model=IncomeGenerateResult)
+async def generate_entries(
+    year: int = Query(ge=2020, le=2100),
+    month: int = Query(ge=1, le=12),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Generate income entries from active income source templates. Idempotent."""
+    result = await generate_income_entries(db, user.id, year, month)
+    return IncomeGenerateResult(
+        generated=result["generated"],
+        skipped=result["skipped"],
+        entries=[IncomeEntryResponse.model_validate(e) for e in result["entries"]],
+    )
+
+
+@router.get("", response_model=list[IncomeEntryResponse])
+async def list_entries(
+    year: int = Query(ge=2020, le=2100),
+    month: int = Query(ge=1, le=12),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    entries = await get_income_entries(db, user.id, year, month)
+    return entries
+
+
+@router.post("", response_model=IncomeEntryResponse, status_code=status.HTTP_201_CREATED)
+async def create_entry(
+    data: IncomeEntryCreate,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a one-time income entry (no template)."""
+    entry = await create_one_time_entry(db, user.id, data)
+    return entry
+
+
+@router.patch("/{entry_id}/confirm", response_model=IncomeEntryResponse)
+async def confirm_entry(
+    entry_id: uuid.UUID,
+    data: IncomeEntryConfirm,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Confirm an income entry with the actual amount received."""
+    try:
+        entry = await confirm_income_entry(db, user.id, entry_id, data)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    return entry
+
+
+@router.patch("/{entry_id}", response_model=IncomeEntryResponse)
+async def update_entry(
+    entry_id: uuid.UUID,
+    data: IncomeEntryUpdate,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        entry = await update_income_entry(db, user.id, entry_id, data)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    return entry
+
+
+@router.delete("/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_entry(
+    entry_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        await delete_income_entry(db, user.id, entry_id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))

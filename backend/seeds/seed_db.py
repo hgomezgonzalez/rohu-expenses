@@ -16,6 +16,7 @@ from app.models.user import User
 from app.models.bill_template import BillTemplate, RecurrenceType
 from app.models.bill_instance import BillInstance, BillStatus
 from app.models.income_source import IncomeSource
+from app.models.income_entry import IncomeEntry
 from app.models import *  # noqa: F401, F403 - ensure all models are imported
 from seeds.categories import CATEGORIES, PERSONAL_BILL_TEMPLATES, PERSONAL_INCOME_SOURCES
 
@@ -46,6 +47,9 @@ async def seed_personal_data():
     """Seed personal bill templates and income sources for the main user."""
     async with async_session_factory() as session:
         # Find or create admin user
+        from app.core.config import settings as app_settings
+        is_local = app_settings.app_env == "development"
+
         result = await session.execute(select(User).where(User.email == "hgomezgonzalez@gmail.com"))
         user = result.scalars().first()
         if not user:
@@ -60,11 +64,19 @@ async def seed_personal_data():
             await session.flush()
             print(f"  Created admin user: {user.email}")
         else:
-            # Ensure admin role
-            if user.role != "admin":
+            if is_local:
+                # Local only: reset password for convenience
                 user.role = "admin"
+                user.is_active = True
+                user.hashed_password = hash_password("paycontrol2026")
                 await session.flush()
-            print(f"  Admin user exists: {user.email}")
+                print(f"  Admin user reset (local): {user.email} (password + role updated)")
+            else:
+                # Production: only ensure role, never touch password or settings
+                if user.role != "admin":
+                    user.role = "admin"
+                    await session.flush()
+                print(f"  Admin user exists (prod): {user.email} (no password change)")
 
         # Load categories map
         cats_result = await session.execute(select(Category))
@@ -126,13 +138,16 @@ async def seed_personal_data():
         print(f"  Created {created_income} income sources")
         await session.commit()
 
-        # Generate bill instances for current month
+        # Generate bill instances and income entries for current month
         from app.services.bill_service import generate_monthly_bills
+        from app.services.income_service import generate_income_entries
         today = date.today()
         async with async_session_factory() as session2:
             generated = await generate_monthly_bills(session2, user.id, today.year, today.month)
+            income_result = await generate_income_entries(session2, user.id, today.year, today.month)
             await session2.commit()
             print(f"  Generated {len(generated)} bill instances for {today.year}-{today.month:02d}")
+            print(f"  Generated {income_result['generated']} income entries for {today.year}-{today.month:02d}")
 
 
 async def main():
@@ -145,7 +160,14 @@ async def main():
             await conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {settings.db_schema}"))
         print(f"Schema '{settings.db_schema}' ensured.")
 
-    # Create all tables
+    # Add new columns to existing tables (safe for both local and prod)
+    async with engine.begin() as conn:
+        await conn.execute(text(
+            "ALTER TABLE income_sources ADD COLUMN IF NOT EXISTS income_type VARCHAR(20) NOT NULL DEFAULT 'recurring'"
+        ))
+    print("Schema migrations applied.")
+
+    # Create all tables (creates new tables like income_entries, skips existing)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     print("Tables created.")

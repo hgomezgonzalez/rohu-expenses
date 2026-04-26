@@ -105,3 +105,37 @@ def build_reminder_telegram(bill_name: str, amount: str, due_date: str, days_tex
         f"📅 Vence: {due_date}\n\n"
         f"Entra a PayControl para registrar el pago."
     )
+
+
+def build_income_reminder_email(source_name: str, amount: str, day_of_month: int) -> str:
+    """Build HTML email body for unconfirmed income reminder."""
+    return f"""
+    <div style="font-family: 'Inter', Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 20px;">
+        <div style="background: linear-gradient(135deg, #1E3A8A, #10B981); padding: 20px; border-radius: 12px 12px 0 0; text-align: center;">
+            <h1 style="color: white; margin: 0; font-size: 20px;">ROHU PayControl</h1>
+            <p style="color: rgba(255,255,255,0.8); margin: 4px 0 0;">Ingreso pendiente de confirmar</p>
+        </div>
+        <div style="background: white; padding: 24px; border: 1px solid #E2E8F0; border-top: none; border-radius: 0 0 12px 12px;">
+            <div style="background: #F8FAFC; padding: 16px; border-radius: 8px; margin-bottom: 16px;">
+                <p style="font-weight: 700; font-size: 18px; margin: 0; color: #0F172A;">{source_name}</p>
+                <p style="color: #64748B; margin: 4px 0 0;">Monto esperado: <strong style="color: #10B981;">{amount}</strong></p>
+                <p style="color: #64748B; margin: 4px 0 0;">Dia esperado: <strong>{day_of_month}</strong></p>
+            </div>
+            <p style="color: #64748B; font-size: 13px; text-align: center; margin: 0;">
+                Confirma en PayControl si ya recibiste este ingreso.
+            </p>
+        </div>
+    </div>
+    """
+
+
+def build_income_reminder_telegram(source_name: str, amount: str, day_of_month: int) -> str:
+    """Build Telegram message for unconfirmed income reminder."""
+    return (
+        f"💵 <b>ROHU PayControl</b>\n\n"
+        f"📌 Ingreso pendiente de confirmar\n\n"
+        f"📋 <b>{source_name}</b>\n"
+        f"💰 Esperado: <b>{amount}</b>\n"
+        f"📅 Dia esperado: {day_of_month}\n\n"
+        f"Confirma en PayControl si ya lo recibiste."
+    )
