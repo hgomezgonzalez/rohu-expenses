@@ -172,14 +172,30 @@ async def generate_monthly_bills(
             continue
 
         # Idempotency: check if instance already exists
-        existing = await db.execute(
+        existing_result = await db.execute(
             select(BillInstance).where(
                 BillInstance.bill_template_id == template.id,
                 BillInstance.year == year,
                 BillInstance.month == month,
             )
         )
-        if existing.scalars().first():
+        existing = existing_result.scalars().first()
+        if existing:
+            # Sync template values to unpaid instances (self-healing)
+            if existing.status in (BillStatus.PENDING, BillStatus.DUE_SOON):
+                due_day = min(template.due_day_of_month, last_day)
+                changed = False
+                if existing.expected_amount != template.estimated_amount:
+                    existing.expected_amount = template.estimated_amount
+                    changed = True
+                if existing.name != template.name:
+                    existing.name = template.name
+                    changed = True
+                if existing.due_date != date(year, month, due_day):
+                    existing.due_date = date(year, month, due_day)
+                    changed = True
+                if changed:
+                    await db.flush()
             continue
 
         # Calculate due date (handle months with fewer days)
