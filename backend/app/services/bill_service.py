@@ -302,34 +302,59 @@ async def update_bill_statuses(db: AsyncSession, user_id: uuid.UUID) -> int:
 
 
 async def delete_bill_template(db: AsyncSession, template: BillTemplate) -> None:
-    """Permanently delete a template and all associated data (CASCADE: instances, payments, attachments, rules)."""
+    """Permanently delete a template and all associated data.
+    Does NOT rely on CASCADE (FK constraints may not exist in DB)."""
     import os
     import logging
     from app.services.gdrive_service import delete_from_drive
 
     logger = logging.getLogger(__name__)
 
-    # Delete attachment files (Drive or local) before CASCADE delete
-    try:
-        instances_result = await db.execute(
-            select(BillInstance).where(BillInstance.bill_template_id == template.id)
-        )
-        for instance in instances_result.scalars().all():
-            payments_result = await db.execute(
-                select(Payment).options(joinedload(Payment.attachments)).where(Payment.bill_instance_id == instance.id)
-            )
-            for payment in payments_result.scalars().unique().all():
-                for att in payment.attachments:
-                    try:
-                        await delete_from_drive(att.file_path)
-                    except Exception as e:
-                        logger.warning("Failed to delete Drive file %s: %s", att.file_path, e)
-                    if os.path.exists(att.file_path):
-                        os.remove(att.file_path)
-    except Exception as e:
-        logger.warning("Error cleaning up files for template %s: %s", template.id, e)
+    # 1. Find all instances for this template
+    instances_result = await db.execute(
+        select(BillInstance).where(BillInstance.bill_template_id == template.id)
+    )
+    instances = list(instances_result.scalars().all())
 
-    # CASCADE delete handles DB records
+    for instance in instances:
+        # 2. Delete attachment files (Drive or local)
+        payments_result = await db.execute(
+            select(Payment).options(joinedload(Payment.attachments))
+            .where(Payment.bill_instance_id == instance.id)
+        )
+        for payment in payments_result.scalars().unique().all():
+            for att in payment.attachments:
+                try:
+                    await delete_from_drive(att.file_path)
+                except Exception as e:
+                    logger.warning("Failed to delete Drive file %s: %s", att.file_path, e)
+                if os.path.exists(att.file_path):
+                    os.remove(att.file_path)
+                # 3. Delete attachment record
+                await db.delete(att)
+
+            # 4. Delete payment record
+            await db.delete(payment)
+
+        # 5. Delete notification logs for this instance
+        logs_result = await db.execute(
+            select(NotificationLog).where(NotificationLog.bill_instance_id == instance.id)
+        )
+        for log in logs_result.scalars().all():
+            await db.delete(log)
+
+        # 6. Delete bill instance
+        await db.delete(instance)
+
+    # 7. Delete notification rules for this template
+    from app.models.notification_rule import NotificationRule
+    rules_result = await db.execute(
+        select(NotificationRule).where(NotificationRule.bill_template_id == template.id)
+    )
+    for rule in rules_result.scalars().all():
+        await db.delete(rule)
+
+    # 8. Delete the template itself
     await db.delete(template)
     await db.flush()
 
@@ -350,23 +375,31 @@ async def purge_month_data(db: AsyncSession, year: int, month: int) -> dict:
     deleted_files = 0
 
     for instance in instances:
+        # Delete attachments + payments manually (no CASCADE)
         payments_result = await db.execute(
             select(Payment).options(joinedload(Payment.attachments)).where(Payment.bill_instance_id == instance.id)
         )
         for payment in payments_result.scalars().unique().all():
             for att in payment.attachments:
-                await delete_from_drive(att.file_path)
+                try:
+                    await delete_from_drive(att.file_path)
+                except Exception:
+                    pass
                 if os.path.exists(att.file_path):
                     os.remove(att.file_path)
+                await db.delete(att)
                 deleted_files += 1
+            await db.delete(payment)
             deleted_payments += 1
 
         # Delete notification logs
-        await db.execute(
+        logs_result = await db.execute(
             select(NotificationLog).where(NotificationLog.bill_instance_id == instance.id)
         )
+        for log in logs_result.scalars().all():
+            await db.delete(log)
 
-        await db.delete(instance)  # CASCADE deletes payments, attachments, logs
+        await db.delete(instance)
         deleted_instances += 1
 
     await db.flush()

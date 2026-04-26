@@ -190,12 +190,16 @@ async def reverse_payment(db: AsyncSession, payment_id: uuid.UUID, user_id: uuid
     if not payment:
         return False
 
-    # Delete attachment files (Drive or local)
+    # Delete attachments (files + DB records) manually — FK CASCADE may not exist in DB
     from app.services.gdrive_service import delete_from_drive
     for att in payment.attachments:
-        await delete_from_drive(att.file_path)
+        try:
+            await delete_from_drive(att.file_path)
+        except Exception:
+            pass
         if os.path.exists(att.file_path):
             os.remove(att.file_path)
+        await db.delete(att)
 
     # Get the bill instance
     bi_result = await db.execute(
@@ -203,7 +207,7 @@ async def reverse_payment(db: AsyncSession, payment_id: uuid.UUID, user_id: uuid
     )
     bill_instance = bi_result.scalars().first()
 
-    # Delete the payment (CASCADE deletes attachments)
+    # Delete the payment
     await db.delete(payment)
     await db.flush()
 
