@@ -46,6 +46,12 @@ class Settings(BaseSettings):
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
 
+    # Google Drive (for attachment storage)
+    gdrive_client_id: str = ""
+    gdrive_client_secret: str = ""
+    gdrive_refresh_token: str = ""
+    gdrive_folder_id: str = ""
+
     # Frontend
     frontend_url: str = "http://localhost:3000"
 

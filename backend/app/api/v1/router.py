@@ -2,7 +2,7 @@ from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
     auth, bills, payments, dashboard, categories,
-    income_sources, income_entries, notifications, users,
+    income_sources, income_entries, notifications, users, storage,
 )
 
 api_router = APIRouter()
@@ -15,3 +15,4 @@ api_router.include_router(income_sources.router)
 api_router.include_router(income_entries.router)
 api_router.include_router(notifications.router)
 api_router.include_router(users.router)
+api_router.include_router(storage.router)

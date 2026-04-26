@@ -304,7 +304,8 @@ async def update_bill_statuses(db: AsyncSession, user_id: uuid.UUID) -> int:
 async def delete_bill_template(db: AsyncSession, template: BillTemplate) -> None:
     """Permanently delete a template and all associated data (CASCADE: instances, payments, attachments, rules)."""
     import os
-    # Collect attachment files to delete from disk
+    from app.services.gdrive_service import delete_from_drive
+
     instances_result = await db.execute(
         select(BillInstance).where(BillInstance.bill_template_id == template.id)
     )
@@ -314,10 +315,10 @@ async def delete_bill_template(db: AsyncSession, template: BillTemplate) -> None
         )
         for payment in payments_result.scalars().unique().all():
             for att in payment.attachments:
+                await delete_from_drive(att.file_path)
                 if os.path.exists(att.file_path):
                     os.remove(att.file_path)
 
-    # CASCADE delete handles DB records (template → instances → payments → attachments, rules, logs)
     await db.delete(template)
     await db.flush()
 
@@ -325,6 +326,7 @@ async def delete_bill_template(db: AsyncSession, template: BillTemplate) -> None
 async def purge_month_data(db: AsyncSession, year: int, month: int) -> dict:
     """Admin: permanently delete all bill instance data for a specific month across ALL users."""
     import os
+    from app.services.gdrive_service import delete_from_drive
 
     result = await db.execute(
         select(BillInstance)
@@ -337,15 +339,15 @@ async def purge_month_data(db: AsyncSession, year: int, month: int) -> dict:
     deleted_files = 0
 
     for instance in instances:
-        # Delete attachment files
         payments_result = await db.execute(
             select(Payment).options(joinedload(Payment.attachments)).where(Payment.bill_instance_id == instance.id)
         )
         for payment in payments_result.scalars().unique().all():
             for att in payment.attachments:
+                await delete_from_drive(att.file_path)
                 if os.path.exists(att.file_path):
                     os.remove(att.file_path)
-                    deleted_files += 1
+                deleted_files += 1
             deleted_payments += 1
 
         # Delete notification logs

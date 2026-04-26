@@ -3,7 +3,7 @@ from datetime import date
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -43,7 +43,7 @@ async def record_payment(
         reference=reference,
         notes=notes,
     )
-    payment = await payment_service.record_payment(db, instance, user.id, data, files or None)
+    payment = await payment_service.record_payment(db, instance, user.id, data, files or None, user.full_name)
     return payment
 
 
@@ -70,14 +70,25 @@ async def get_attachment_file(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attachment not found")
 
     import os
-    if not os.path.exists(attachment.file_path):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found on disk")
+    file_path = attachment.file_path
 
-    return FileResponse(
-        path=attachment.file_path,
-        media_type=attachment.file_type,
-        filename=attachment.file_name,
-    )
+    # Detect if it's a local path or Google Drive file ID
+    if "/" in file_path or file_path.startswith("."):
+        # Local filesystem (legacy or development)
+        if not os.path.exists(file_path):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found on disk")
+        return FileResponse(path=file_path, media_type=attachment.file_type, filename=attachment.file_name)
+    else:
+        # Google Drive file ID
+        from app.services.gdrive_service import download_from_drive
+        content = await download_from_drive(file_path)
+        if not content:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found in Google Drive")
+        return Response(
+            content=content,
+            media_type=attachment.file_type,
+            headers={"Content-Disposition": f'inline; filename="{attachment.file_name}"'},
+        )
 
 
 @router.delete("/payments/{payment_id}", status_code=status.HTTP_204_NO_CONTENT)

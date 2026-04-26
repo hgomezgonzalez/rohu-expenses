@@ -20,6 +20,7 @@ async def record_payment(
     user_id: uuid.UUID,
     data: PaymentCreate,
     files: list[UploadFile] | None = None,
+    user_name: str = "default",
 ) -> Payment:
     payment = Payment(
         bill_instance_id=bill_instance.id,
@@ -36,7 +37,7 @@ async def record_payment(
     # Handle file uploads
     if files:
         for file in files:
-            attachment = await _save_attachment(db, payment.id, file)
+            attachment = await _save_attachment(db, payment.id, file, user_name)
             if attachment:
                 db.add(attachment)
 
@@ -50,7 +51,7 @@ async def record_payment(
 
 
 async def _save_attachment(
-    db: AsyncSession, payment_id: uuid.UUID, file: UploadFile
+    db: AsyncSession, payment_id: uuid.UUID, file: UploadFile, user_name: str = "default"
 ) -> Attachment | None:
     if not file.filename:
         return None
@@ -62,7 +63,6 @@ async def _save_attachment(
     if len(content) > settings.max_upload_size_bytes:
         return None
 
-    os.makedirs(settings.upload_dir, exist_ok=True)
     content_type = file.content_type or "application/octet-stream"
 
     # Compress images with Pillow (reduces 5-10MB phone photos to ~100-200KB)
@@ -72,11 +72,9 @@ async def _save_attachment(
         img = Image.open(BytesIO(content))
         if img.mode in ("RGBA", "P"):
             img = img.convert("RGB")
-        # Resize if wider than max
         if img.width > settings.image_max_width:
             ratio = settings.image_max_width / img.width
             img = img.resize((settings.image_max_width, int(img.height * ratio)), Image.LANCZOS)
-        # Save as JPEG
         buf = BytesIO()
         img.save(buf, format="JPEG", quality=settings.image_quality, optimize=True)
         content = buf.getvalue()
@@ -86,6 +84,25 @@ async def _save_attachment(
         ext = os.path.splitext(file.filename)[1]
         safe_filename = f"{uuid.uuid4()}{ext}"
 
+    # Upload to Google Drive if available, otherwise save locally
+    from app.services.gdrive_service import is_gdrive_available, upload_to_drive
+
+    if is_gdrive_available():
+        drive_file_id = await upload_to_drive(content, safe_filename, content_type, user_name)
+        if drive_file_id:
+            return Attachment(
+                payment_id=payment_id,
+                file_path=drive_file_id,
+                file_name=file.filename,
+                file_type=content_type,
+                file_size=len(content),
+            )
+        # Drive upload failed — fall through to local storage
+        import logging
+        logging.getLogger(__name__).warning("Drive upload failed, saving locally")
+
+    # Local fallback (development or Drive unavailable)
+    os.makedirs(settings.upload_dir, exist_ok=True)
     file_path = os.path.join(settings.upload_dir, safe_filename)
     with open(file_path, "wb") as f:
         f.write(content)
@@ -173,8 +190,10 @@ async def reverse_payment(db: AsyncSession, payment_id: uuid.UUID, user_id: uuid
     if not payment:
         return False
 
-    # Delete attachment files from disk
+    # Delete attachment files (Drive or local)
+    from app.services.gdrive_service import delete_from_drive
     for att in payment.attachments:
+        await delete_from_drive(att.file_path)
         if os.path.exists(att.file_path):
             os.remove(att.file_path)
 
