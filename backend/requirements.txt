@@ -34,6 +34,11 @@ aiosmtplib==3.0.2
 python-magic==0.4.27
 Pillow==11.2.1
 
+# Google Drive
+google-api-python-client==2.165.0
+google-auth==2.40.1
+google-auth-oauthlib==1.2.1
+
 # Utilities
 httpx==0.28.1
 python-dateutil==2.9.0
