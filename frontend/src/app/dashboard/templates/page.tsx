@@ -260,24 +260,30 @@ export default function TemplatesPage() {
         <div className="space-y-2">
           {filteredTemplates.map((t) => (
             <div key={t.id} className={`bg-white rounded-xl border transition-all ${!t.is_active ? "opacity-50" : ""}`}>
-              <div className="flex items-center justify-between p-4">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <p className="font-semibold truncate">{t.name}</p>
-                    {t.provider && <span className="text-xs text-rohu-muted">({t.provider})</span>}
+              <div className="p-4">
+                {/* Mobile: stack / Desktop: row */}
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <p className="font-semibold truncate">{t.name}</p>
+                      {t.provider && <span className="text-xs text-rohu-muted hidden md:inline">({t.provider})</span>}
+                    </div>
+                    <div className="flex items-center gap-2 text-sm text-rohu-muted mt-0.5 flex-wrap">
+                      <span className="px-2 py-0.5 rounded-full text-xs bg-gray-100" style={{ color: t.category.color || undefined }}>
+                        {t.category.name}
+                      </span>
+                      <span>Día {t.due_day_of_month}</span>
+                      <span className="hidden md:inline">{RECURRENCE_LABELS[t.recurrence_type]}</span>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2 text-sm text-rohu-muted mt-0.5">
-                    <span className="px-2 py-0.5 rounded-full text-xs bg-gray-100" style={{ color: t.category.color || undefined }}>
-                      {t.category.name}
-                    </span>
-                    <span>Día {t.due_day_of_month}</span>
-                    <span>{RECURRENCE_LABELS[t.recurrence_type]}</span>
-                  </div>
+                  <span className="font-bold text-lg flex-shrink-0">{formatCurrency(t.estimated_amount)}</span>
                 </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  <span className="font-bold">{formatCurrency(t.estimated_amount)}</span>
+
+                {/* Action buttons - separate row on mobile */}
+                <div className="flex items-center justify-end gap-1 mt-2 md:mt-0 border-t md:border-0 pt-2 md:pt-0">
+                  {t.provider && <span className="text-xs text-rohu-muted mr-auto md:hidden">{t.provider}</span>}
                   <button onClick={() => openNotifConfig(t.id)} className="p-2 min-h-[44px] min-w-[44px] flex items-center justify-center hover:bg-gray-100 rounded-lg"
-                    title="Configurar notificaciones">
+                    title="Notificaciones">
                     {showNotifConfig === t.id ? <ChevronUp className="w-4 h-4 text-rohu-accent" /> : <Bell className="w-4 h-4 text-rohu-accent" />}
                   </button>
                   <button onClick={() => startEdit(t)} className="p-2 min-h-[44px] min-w-[44px] flex items-center justify-center hover:bg-gray-100 rounded-lg" title="Editar">

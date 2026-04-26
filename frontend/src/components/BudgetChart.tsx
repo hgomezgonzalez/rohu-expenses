@@ -14,7 +14,7 @@ export default function BudgetChart({ variance }: BudgetChartProps) {
   );
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-xl border p-4">
+    <div className="bg-white rounded-xl border p-4">
       <div className="flex items-center justify-between mb-4">
         <h3 className="font-bold text-lg">Presupuesto vs Ejecutado</h3>
         <div className="flex items-center gap-4 text-xs">
@@ -28,18 +28,18 @@ export default function BudgetChart({ variance }: BudgetChartProps) {
       </div>
 
       {/* Totals */}
-      <div className="grid grid-cols-3 gap-3 mb-6 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+      <div className="grid grid-cols-3 gap-2 mb-6 p-3 bg-gray-50 rounded-lg">
         <div>
-          <p className="text-xs text-gray-500">Presupuesto</p>
-          <p className="font-bold text-rohu-primary">{formatCurrency(variance.total_budget)}</p>
+          <p className="text-[10px] text-gray-500">Presupuesto</p>
+          <p className="font-bold text-sm text-rohu-primary">{formatCurrency(variance.total_budget)}</p>
         </div>
         <div>
-          <p className="text-xs text-gray-500">Ejecutado</p>
-          <p className="font-bold text-rohu-secondary">{formatCurrency(variance.total_actual)}</p>
+          <p className="text-[10px] text-gray-500">Ejecutado</p>
+          <p className="font-bold text-sm text-rohu-secondary">{formatCurrency(variance.total_actual)}</p>
         </div>
         <div>
-          <p className="text-xs text-gray-500">Desviación</p>
-          <p className={`font-bold ${variance.total_variance >= 0 ? "text-rohu-secondary" : "text-red-600"}`}>
+          <p className="text-[10px] text-gray-500">Desviación</p>
+          <p className={`font-bold text-sm ${variance.total_variance >= 0 ? "text-rohu-secondary" : "text-red-600"}`}>
             {variance.total_variance >= 0 ? "+" : ""}{formatCurrency(variance.total_variance)}
           </p>
         </div>
@@ -74,7 +74,7 @@ export default function BudgetChart({ variance }: BudgetChartProps) {
                   />
                 </div>
               </div>
-              <div className="flex justify-between text-xs text-gray-400 mt-0.5">
+              <div className="flex justify-between text-xs text-gray-500 mt-0.5">
                 <span>{formatCurrency(item.budget_amount)}</span>
                 <span>{formatCurrency(item.actual_paid)}</span>
               </div>
