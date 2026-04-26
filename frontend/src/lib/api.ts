@@ -176,6 +176,14 @@ export function getAttachmentUrl(paymentId: string, attachmentId: string): strin
   return `${base}/payments/${paymentId}/attachments/${attachmentId}`;
 }
 
+export async function fetchAttachmentBlob(paymentId: string, attachmentId: string): Promise<string> {
+  const url = getAttachmentUrl(paymentId, attachmentId);
+  const res = await fetch(url, { headers: getHeaders() });
+  if (!res.ok) throw new Error(`Error ${res.status}`);
+  const blob = await res.blob();
+  return URL.createObjectURL(blob);
+}
+
 // Profile
 export async function updateProfile(data: { email?: string; full_name?: string; timezone?: string }) {
   return request<any>("/users/me", { method: "PATCH", body: JSON.stringify(data) });

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { Search, ChevronLeft, ChevronRight, Paperclip, Eye, X, Download, RotateCcw } from "lucide-react";
-import { listPayments, reversePayment, getAttachmentUrl, PaymentWithBill, PaymentAttachment } from "@/lib/api";
+import { listPayments, reversePayment, getAttachmentUrl, fetchAttachmentBlob, PaymentWithBill, PaymentAttachment } from "@/lib/api";
 import ConfirmModal from "@/components/ConfirmModal";
 import { formatCurrency, formatDate, getMonthName } from "@/lib/utils";
 
@@ -23,6 +23,8 @@ export default function PaymentsHistoryPage() {
   const [viewingAttachment, setViewingAttachment] = useState<{ paymentId: string; att: PaymentAttachment } | null>(null);
   const [reverseTarget, setReverseTarget] = useState<PaymentWithBill | null>(null);
   const [reverseResult, setReverseResult] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [attachmentBlobUrl, setAttachmentBlobUrl] = useState<string | null>(null);
+  const [attachmentLoading, setAttachmentLoading] = useState(false);
 
   async function confirmReverse() {
     if (!reverseTarget) return;
@@ -126,7 +128,16 @@ export default function PaymentsHistoryPage() {
 
                   {p.attachments.length > 0 && (
                     <button
-                      onClick={() => setViewingAttachment({ paymentId: p.id, att: p.attachments[0] })}
+                      onClick={async () => {
+                        setViewingAttachment({ paymentId: p.id, att: p.attachments[0] });
+                        setAttachmentLoading(true);
+                        setAttachmentBlobUrl(null);
+                        try {
+                          const blobUrl = await fetchAttachmentBlob(p.id, p.attachments[0].id);
+                          setAttachmentBlobUrl(blobUrl);
+                        } catch { setAttachmentBlobUrl(null); }
+                        setAttachmentLoading(false);
+                      }}
                       className="flex items-center gap-1 px-2 py-1 bg-rohu-primary/10 text-rohu-primary text-xs rounded-lg hover:bg-rohu-primary/15"
                       title="Ver evidencia"
                     >
@@ -155,43 +166,39 @@ export default function PaymentsHistoryPage() {
             <div className="flex items-center justify-between p-4 border-b">
               <h2 className="font-bold">Evidencia de pago</h2>
               <div className="flex items-center gap-2">
-                <a
-                  href={getAttachmentUrl(viewingAttachment.paymentId, viewingAttachment.att.id)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="p-2 hover:bg-gray-100 rounded-lg"
-                  title="Descargar"
-                >
-                  <Download className="w-5 h-5 text-gray-500" />
-                </a>
-                <button onClick={() => setViewingAttachment(null)} className="p-2 hover:bg-gray-100 rounded-lg">
+                {attachmentBlobUrl && (
+                  <a href={attachmentBlobUrl} download={viewingAttachment.att.file_name}
+                    className="p-2 hover:bg-gray-100 rounded-lg" title="Descargar">
+                    <Download className="w-5 h-5 text-gray-500" />
+                  </a>
+                )}
+                <button onClick={() => { setViewingAttachment(null); if (attachmentBlobUrl) URL.revokeObjectURL(attachmentBlobUrl); setAttachmentBlobUrl(null); }}
+                  className="p-2 hover:bg-gray-100 rounded-lg">
                   <X className="w-5 h-5" />
                 </button>
               </div>
             </div>
             <div className="p-4 overflow-y-auto max-h-[70vh]">
-              {viewingAttachment.att.file_type.startsWith("image/") ? (
-                <img
-                  src={getAttachmentUrl(viewingAttachment.paymentId, viewingAttachment.att.id)}
-                  alt={viewingAttachment.att.file_name}
-                  className="w-full rounded-lg"
-                />
-              ) : viewingAttachment.att.file_type === "application/pdf" ? (
-                <iframe
-                  src={getAttachmentUrl(viewingAttachment.paymentId, viewingAttachment.att.id)}
-                  className="w-full h-[60vh] rounded-lg"
-                  title={viewingAttachment.att.file_name}
-                />
+              {attachmentLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="animate-spin w-8 h-8 border-4 border-rohu-primary border-t-transparent rounded-full" />
+                </div>
+              ) : attachmentBlobUrl ? (
+                viewingAttachment.att.file_type.startsWith("image/") ? (
+                  <img src={attachmentBlobUrl} alt={viewingAttachment.att.file_name} className="w-full rounded-lg" />
+                ) : viewingAttachment.att.file_type === "application/pdf" ? (
+                  <iframe src={attachmentBlobUrl} className="w-full h-[60vh] rounded-lg" title={viewingAttachment.att.file_name} />
+                ) : (
+                  <div className="text-center py-8">
+                    <p className="text-gray-500 mb-2">{viewingAttachment.att.file_name}</p>
+                    <a href={attachmentBlobUrl} className="text-rohu-primary hover:underline" download={viewingAttachment.att.file_name}>
+                      Descargar archivo
+                    </a>
+                  </div>
+                )
               ) : (
                 <div className="text-center py-8">
-                  <p className="text-gray-500 mb-2">{viewingAttachment.att.file_name}</p>
-                  <a
-                    href={getAttachmentUrl(viewingAttachment.paymentId, viewingAttachment.att.id)}
-                    className="text-rohu-primary hover:underline"
-                    download
-                  >
-                    Descargar archivo
-                  </a>
+                  <p className="text-gray-500">No se pudo cargar la evidencia</p>
                 </div>
               )}
               <p className="text-xs text-gray-400 mt-2">{viewingAttachment.att.file_name}</p>
