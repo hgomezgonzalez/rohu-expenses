@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Plus, X, Edit2, Trash2, ToggleLeft, ToggleRight, Bell, BellOff, ChevronDown, ChevronUp } from "lucide-react";
+import { Plus, X, Edit2, Trash2, ToggleLeft, ToggleRight, Bell, BellOff, ChevronDown, ChevronUp, Search } from "lucide-react";
 import ConfirmModal from "@/components/ConfirmModal";
 import {
   getBillTemplates, createBillTemplate, updateBillTemplate, deleteBillTemplate, getCategories,
@@ -51,6 +51,10 @@ export default function TemplatesPage() {
   const [nfTelegram, setNfTelegram] = useState(true);
   const [nfExtraEmails, setNfExtraEmails] = useState("");
   const [nfSaving, setNfSaving] = useState(false);
+
+  // Filter state
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filterCategory, setFilterCategory] = useState("all");
 
   async function loadData() {
     setLoading(true);
@@ -147,6 +151,13 @@ export default function TemplatesPage() {
     </div>
   );
 
+  const filteredTemplates = templates.filter((t) => {
+    const q = searchQuery.toLowerCase();
+    const matchesSearch = !q || t.name.toLowerCase().includes(q) || (t.provider && t.provider.toLowerCase().includes(q));
+    const matchesCategory = filterCategory === "all" || t.category.id === filterCategory;
+    return matchesSearch && matchesCategory;
+  });
+
   const inputClass = "w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-rohu-accent";
 
   return (
@@ -161,6 +172,23 @@ export default function TemplatesPage() {
           <Plus className="w-4 h-4" /> Nueva
         </button>
       </div>
+
+      {/* Search & Filter */}
+      {templates.length > 0 && (
+        <div className="flex items-center gap-3">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input type="text" placeholder="Buscar por nombre o proveedor..."
+              value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-10 pr-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-rohu-accent text-sm" />
+          </div>
+          <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)}
+            className="px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-rohu-accent text-sm">
+            <option value="all">Todas</option>
+            {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        </div>
+      )}
 
       {/* Create/Edit Modal */}
       {showForm && (
@@ -224,9 +252,13 @@ export default function TemplatesPage() {
             Crear primera plantilla
           </button>
         </div>
+      ) : filteredTemplates.length === 0 ? (
+        <div className="text-center py-12 bg-white rounded-xl border">
+          <p className="text-gray-500">No se encontraron plantillas con ese filtro</p>
+        </div>
       ) : (
         <div className="space-y-2">
-          {templates.map((t) => (
+          {filteredTemplates.map((t) => (
             <div key={t.id} className={`bg-white rounded-xl border transition-all ${!t.is_active ? "opacity-50" : ""}`}>
               <div className="flex items-center justify-between p-4">
                 <div className="min-w-0">

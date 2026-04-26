@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ChevronLeft, ChevronRight, RefreshCw, FileText } from "lucide-react";
+import { ChevronLeft, ChevronRight, RefreshCw, FileText, Search } from "lucide-react";
 import {
   getDashboardFull, generateBillInstances,
   DashboardSummary, CashflowForecast, BillInstance,
@@ -27,24 +27,19 @@ export default function DashboardPage() {
   const [undoInfo, setUndoInfo] = useState<{ paymentId: string; billName: string; amount: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [payingBill, setPayingBill] = useState<BillInstance | null>(null);
+  const [billSearch, setBillSearch] = useState("");
+  const [billStatusFilter, setBillStatusFilter] = useState("all");
 
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      // Single API call for entire dashboard (summary + cashflow + bills + status update)
+      // Always generate first (idempotent — won't create duplicates)
+      await generateBillInstances(year, month).catch(() => null);
+      // Then load full dashboard (includes status update)
       const data = await getDashboardFull(year, month);
       setSummary(data.summary);
       setCashflow(data.cashflow);
       setBills(data.bills);
-
-      // Auto-generate only if no bills exist (first time for this month)
-      if (data.bills.length === 0) {
-        const gen = await generateBillInstances(year, month).catch(() => null);
-        if (gen && gen.created > 0) {
-          const data2 = await getDashboardFull(year, month);
-          setSummary(data2.summary); setCashflow(data2.cashflow); setBills(data2.bills);
-        }
-      }
     } catch (err: any) {
       if (err.message?.includes("401") || err.message?.includes("Invalid")) {
         localStorage.removeItem("access_token");
@@ -64,12 +59,19 @@ export default function DashboardPage() {
     if (newMonth < 1) { newMonth = 12; newYear--; }
     setMonth(newMonth);
     setYear(newYear);
+    setBillSearch("");
+    setBillStatusFilter("all");
   }
 
   const statusOrder = { overdue: 0, due_soon: 1, pending: 2, paid: 3, cancelled: 4 };
-  const sortedBills = [...bills].sort(
-    (a, b) => (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9)
-  );
+  const sortedBills = [...bills]
+    .sort((a, b) => (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9))
+    .filter((bill) => {
+      const q = billSearch.toLowerCase();
+      const matchesSearch = !q || bill.name.toLowerCase().includes(q);
+      const matchesStatus = billStatusFilter === "all" || bill.status === billStatusFilter;
+      return matchesSearch && matchesStatus;
+    });
 
   if (loading) {
     return (
@@ -112,7 +114,27 @@ export default function DashboardPage() {
           <h3 className="font-bold text-lg">Facturas del mes</h3>
         </div>
 
-        {sortedBills.length === 0 ? (
+        {/* Search & filter */}
+        {bills.length > 0 && (
+          <div className="flex items-center gap-3 mb-3">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input type="text" placeholder="Buscar factura..."
+                value={billSearch} onChange={(e) => setBillSearch(e.target.value)}
+                className="w-full pl-10 pr-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-rohu-accent" />
+            </div>
+            <select value={billStatusFilter} onChange={(e) => setBillStatusFilter(e.target.value)}
+              className="px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-rohu-accent">
+              <option value="all">Todos</option>
+              <option value="overdue">Vencidas</option>
+              <option value="due_soon">Proximas</option>
+              <option value="pending">Pendientes</option>
+              <option value="paid">Pagadas</option>
+            </select>
+          </div>
+        )}
+
+        {bills.length === 0 ? (
           <div className="text-center py-12 bg-white rounded-xl border">
             <FileText className="w-12 h-12 text-gray-300 mx-auto mb-3" />
             <p className="text-gray-500 mb-2">No hay facturas para este mes</p>
@@ -123,6 +145,10 @@ export default function DashboardPage() {
               </Link>{" "}
               y las facturas se generarán automáticamente.
             </p>
+          </div>
+        ) : sortedBills.length === 0 ? (
+          <div className="text-center py-8 bg-white rounded-xl border">
+            <p className="text-gray-500">No se encontraron facturas con ese filtro</p>
           </div>
         ) : (
           <div className="space-y-2">

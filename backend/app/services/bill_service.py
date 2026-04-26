@@ -73,11 +73,82 @@ async def update_bill_template(
     db: AsyncSession, template: BillTemplate, data: BillTemplateUpdate
 ) -> BillTemplate:
     update_data = data.model_dump(exclude_unset=True)
+
+    # Capture old values before mutation (for propagation)
+    old_amount = template.estimated_amount if "estimated_amount" in update_data else None
+    old_name = template.name if "name" in update_data else None
+    old_due_day = template.due_day_of_month if "due_day_of_month" in update_data else None
+
     for key, value in update_data.items():
         setattr(template, key, value)
     await db.flush()
+
+    # Propagate changes to unpaid bill instances (current + future months)
+    if old_amount is not None or old_name is not None or old_due_day is not None:
+        await propagate_template_changes_to_instances(
+            db, template, old_amount, old_name, old_due_day
+        )
+
     await db.refresh(template, ["category"])
     return template
+
+
+async def propagate_template_changes_to_instances(
+    db: AsyncSession,
+    template: BillTemplate,
+    old_amount: Decimal | None,
+    old_name: str | None,
+    old_due_day: int | None,
+) -> int:
+    """Propagate template changes to unpaid bill instances.
+
+    Rules:
+    - Past months: NEVER change (historical data)
+    - Current month: Update only PENDING or DUE_SOON
+    - Future months: Update anything not PAID or CANCELLED
+    """
+    today = date.today()
+    current_month_start = date(today.year, today.month, 1)
+
+    amount_changed = old_amount is not None and template.estimated_amount != old_amount
+    name_changed = old_name is not None and template.name != old_name
+    due_day_changed = old_due_day is not None and template.due_day_of_month != old_due_day
+
+    if not amount_changed and not name_changed and not due_day_changed:
+        return 0
+
+    result = await db.execute(
+        select(BillInstance).where(BillInstance.bill_template_id == template.id)
+    )
+    instances = result.scalars().all()
+    updated = 0
+
+    for instance in instances:
+        instance_month_start = date(instance.year, instance.month, 1)
+
+        if instance_month_start < current_month_start:
+            continue  # Past month: never touch
+
+        if instance_month_start == current_month_start:
+            if instance.status not in (BillStatus.PENDING, BillStatus.DUE_SOON):
+                continue  # Current month: only PENDING/DUE_SOON
+        else:
+            if instance.status in (BillStatus.PAID, BillStatus.CANCELLED):
+                continue  # Future month: skip PAID/CANCELLED
+
+        if amount_changed:
+            instance.expected_amount = template.estimated_amount
+        if name_changed:
+            instance.name = template.name
+        if due_day_changed:
+            last_day = calendar.monthrange(instance.year, instance.month)[1]
+            new_day = min(template.due_day_of_month, last_day)
+            instance.due_date = date(instance.year, instance.month, new_day)
+        updated += 1
+
+    if updated:
+        await db.flush()
+    return updated
 
 
 async def generate_monthly_bills(
