@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -12,6 +13,8 @@ from app.models.user import User
 from app.models.user_settings import UserSettings
 from app.schemas.user import UserLogin, UserResponse, TokenResponse
 from app.services.notification_service import send_telegram_with_settings, send_email_with_settings, build_reminder_email
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -63,21 +66,36 @@ async def register(data: RegisterRequest, db: AsyncSession = Depends(get_db)):
         "Nuevo registro en PayControl",
     )
 
+    logger.info("Notifying %d admin(s) about new registration: %s", len(admins), data.email)
+
     for admin in admins:
         settings_result = await db.execute(
             select(UserSettings).where(UserSettings.user_id == admin.id)
         )
         admin_settings = settings_result.scalars().first()
         if not admin_settings:
+            logger.warning("Admin %s has no UserSettings, skipping notification", admin.email)
             continue
+
+        logger.info("Admin %s settings: email_enabled=%s, telegram_enabled=%s, smtp_host=%s, telegram_token_set=%s",
+                     admin.email, admin_settings.email_enabled, admin_settings.telegram_enabled,
+                     bool(admin_settings.smtp_host), bool(admin_settings.telegram_bot_token_encrypted))
 
         # Telegram
         if admin_settings.telegram_enabled and admin_settings.telegram_bot_token_encrypted:
-            await send_telegram_with_settings(admin_settings, telegram_msg)
+            try:
+                success = await send_telegram_with_settings(admin_settings, telegram_msg)
+                logger.info("Telegram notification to admin %s: %s", admin.email, "sent" if success else "failed")
+            except Exception as e:
+                logger.error("Telegram notification error for admin %s: %s", admin.email, e)
 
         # Email
         if admin_settings.email_enabled and admin_settings.smtp_host:
-            await send_email_with_settings(admin_settings, admin.email, email_subject, email_body)
+            try:
+                success = await send_email_with_settings(admin_settings, admin.email, email_subject, email_body)
+                logger.info("Email notification to admin %s: %s", admin.email, "sent" if success else "failed")
+            except Exception as e:
+                logger.error("Email notification error for admin %s: %s", admin.email, e)
 
     return RegisterResponse(
         message="Registro exitoso. Tu cuenta será activada por el administrador.",

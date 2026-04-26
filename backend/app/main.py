@@ -23,10 +23,11 @@ async def lifespan(app: FastAPI):
     scheduler.add_job(
         check_and_send_reminders,
         "cron",
-        hour=8,
+        hour=12,
         minute=0,
         id="daily_reminders",
         replace_existing=True,
+        timezone="America/Bogota",
     )
     scheduler.add_job(
         generate_monthly_income_entries,
@@ -38,7 +39,7 @@ async def lifespan(app: FastAPI):
         replace_existing=True,
     )
     scheduler.start()
-    logger.info("Scheduler started - daily reminders at 08:00, income generation on 1st at 00:30")
+    logger.info("Scheduler started - daily reminders at 12:00 COT, income generation on 1st at 00:30 UTC")
     yield
     # Shutdown
     scheduler.shutdown()
