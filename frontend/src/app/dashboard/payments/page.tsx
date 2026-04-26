@@ -30,10 +30,14 @@ export default function PaymentsHistoryPage() {
       await reversePayment(reverseTarget.id);
       setReverseTarget(null);
       setReverseResult({ ok: true, msg: `Pago de ${reverseTarget.bill_name} reversado. La factura vuelve a estar pendiente.` });
-      await loadData();
     } catch (err: any) {
       setReverseTarget(null);
-      setReverseResult({ ok: false, msg: err.message });
+      const msg = err.message?.includes("not found")
+        ? "El pago ya fue reversado anteriormente."
+        : err.message || "Error al reversar el pago";
+      setReverseResult({ ok: false, msg });
+    } finally {
+      await loadData();
     }
   }
 

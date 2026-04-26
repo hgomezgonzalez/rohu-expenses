@@ -10,10 +10,15 @@ function getHeaders(): HeadersInit {
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    ...options,
-    headers: { ...getHeaders(), ...options?.headers },
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      ...options,
+      headers: { ...getHeaders(), ...options?.headers },
+    });
+  } catch {
+    throw new Error("Error de conexion. Verifica tu internet e intenta de nuevo.");
+  }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.detail || `Error ${res.status}`);
