@@ -87,8 +87,14 @@ async def generate_instances(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    created = await bill_service.generate_monthly_bills(db, user.id, year, month)
-    return {"created": len(created), "message": f"Generated {len(created)} bill instances for {year}-{month:02d}"}
+    result = await bill_service.generate_monthly_bills(db, user.id, year, month)
+    created_count = len(result["created"])
+    synced_count = result["synced"]
+    return {
+        "created": created_count,
+        "synced": synced_count,
+        "message": f"Generated {created_count}, synced {synced_count} for {year}-{month:02d}",
+    }
 
 
 @router.get("/instances", response_model=list[BillInstanceResponse])

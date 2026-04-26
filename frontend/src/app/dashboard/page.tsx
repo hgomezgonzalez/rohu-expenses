@@ -29,12 +29,21 @@ export default function DashboardPage() {
   const [payingBill, setPayingBill] = useState<BillInstance | null>(null);
   const [billSearch, setBillSearch] = useState("");
   const [billStatusFilter, setBillStatusFilter] = useState("all");
+  const [syncMsg, setSyncMsg] = useState("");
 
   const loadData = useCallback(async () => {
     setLoading(true);
+    setSyncMsg("");
     try {
-      // Always generate first (idempotent — won't create duplicates)
-      await generateBillInstances(year, month).catch(() => null);
+      // Always generate + sync first (idempotent — won't create duplicates)
+      const gen = await generateBillInstances(year, month).catch(() => null);
+      if (gen && (gen.created > 0 || gen.synced > 0)) {
+        const parts = [];
+        if (gen.created > 0) parts.push(`${gen.created} creada${gen.created > 1 ? "s" : ""}`);
+        if (gen.synced > 0) parts.push(`${gen.synced} sincronizada${gen.synced > 1 ? "s" : ""}`);
+        setSyncMsg(parts.join(", "));
+        setTimeout(() => setSyncMsg(""), 4000);
+      }
       // Then load full dashboard (includes status update)
       const data = await getDashboardFull(year, month);
       setSummary(data.summary);
@@ -85,8 +94,15 @@ export default function DashboardPage() {
     <div className="max-w-5xl mx-auto px-4 py-6 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Dashboard</h1>
-        <button onClick={loadData} className="p-2 hover:bg-gray-200 rounded-lg" title="Actualizar">
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-bold">Dashboard</h1>
+          {syncMsg && (
+            <span className="text-xs bg-green-100 text-green-700 px-2.5 py-1 rounded-full font-medium animate-pulse">
+              {syncMsg}
+            </span>
+          )}
+        </div>
+        <button onClick={loadData} className="p-2 hover:bg-gray-200 rounded-lg" title="Sincronizar facturas con plantillas">
           <RefreshCw className="w-5 h-5 text-gray-500" />
         </button>
       </div>

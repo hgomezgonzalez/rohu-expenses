@@ -153,8 +153,10 @@ async def propagate_template_changes_to_instances(
 
 async def generate_monthly_bills(
     db: AsyncSession, user_id: uuid.UUID, year: int, month: int
-) -> list[BillInstance]:
-    """Generate bill instances from active templates for a given month. Idempotent."""
+) -> dict:
+    """Generate bill instances from active templates for a given month.
+    Also syncs existing unpaid instances with current template values.
+    Returns {"created": [...], "synced": int}."""
     templates = await db.execute(
         select(BillTemplate).where(
             BillTemplate.user_id == user_id,
@@ -164,6 +166,7 @@ async def generate_monthly_bills(
     templates = list(templates.scalars().all())
 
     created = []
+    synced = 0
     last_day = calendar.monthrange(year, month)[1]
 
     for template in templates:
@@ -181,8 +184,8 @@ async def generate_monthly_bills(
         )
         existing = existing_result.scalars().first()
         if existing:
-            # Sync template values to unpaid instances (self-healing)
-            if existing.status in (BillStatus.PENDING, BillStatus.DUE_SOON):
+            # Sync template values to unpaid instances (PENDING, DUE_SOON, OVERDUE)
+            if existing.status not in (BillStatus.PAID, BillStatus.CANCELLED):
                 due_day = min(template.due_day_of_month, last_day)
                 changed = False
                 if existing.expected_amount != template.estimated_amount:
@@ -195,7 +198,7 @@ async def generate_monthly_bills(
                     existing.due_date = date(year, month, due_day)
                     changed = True
                 if changed:
-                    await db.flush()
+                    synced += 1
             continue
 
         # Calculate due date (handle months with fewer days)
@@ -217,7 +220,7 @@ async def generate_monthly_bills(
         created.append(instance)
 
     await db.flush()
-    return created
+    return {"created": created, "synced": synced}
 
 
 def _should_generate(template: BillTemplate, year: int, month: int) -> bool:

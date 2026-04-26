@@ -84,7 +84,7 @@ export async function getBillInstances(year: number, month: number, status?: str
 }
 
 export async function generateBillInstances(year: number, month: number) {
-  return request<{ created: number; message: string }>(
+  return request<{ created: number; synced: number; message: string }>(
     `/bills/instances/generate?year=${year}&month=${month}`,
     { method: "POST" }
   );

@@ -143,10 +143,10 @@ async def seed_personal_data():
         from app.services.income_service import generate_income_entries
         today = date.today()
         async with async_session_factory() as session2:
-            generated = await generate_monthly_bills(session2, user.id, today.year, today.month)
+            bill_result = await generate_monthly_bills(session2, user.id, today.year, today.month)
             income_result = await generate_income_entries(session2, user.id, today.year, today.month)
             await session2.commit()
-            print(f"  Generated {len(generated)} bill instances for {today.year}-{today.month:02d}")
+            print(f"  Generated {len(bill_result['created'])} bill instances, synced {bill_result['synced']} for {today.year}-{today.month:02d}")
             print(f"  Generated {income_result['generated']} income entries for {today.year}-{today.month:02d}")
 
 
