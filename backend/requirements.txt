@@ -1,0 +1,49 @@
+# ROHU PayControl - Backend Dependencies
+
+# Framework
+fastapi==0.115.12
+uvicorn[standard]==0.34.2
+gunicorn==23.0.0
+python-multipart==0.0.20
+
+# Database
+sqlalchemy[asyncio]==2.0.40
+asyncpg==0.30.0
+psycopg2-binary==2.9.10
+alembic==1.15.2
+
+# Auth
+pyjwt>=2.9.0,<3.0.0
+passlib[bcrypt]==1.7.4
+bcrypt==4.3.0
+
+# Validation & Settings
+pydantic==2.11.1
+pydantic-settings==2.8.1
+
+# Redis
+redis==5.3.0
+
+# Scheduler
+apscheduler==3.11.0
+
+# Email
+aiosmtplib==3.0.2
+
+# File handling
+python-magic==0.4.27
+Pillow==11.2.1
+
+# Utilities
+httpx==0.28.1
+python-dateutil==2.9.0
+
+# Testing
+pytest==8.3.5
+pytest-asyncio==0.25.3
+pytest-cov==6.1.1
+factory-boy==3.3.3
+
+# Dev tools
+ruff==0.11.8
+mypy==1.15.0

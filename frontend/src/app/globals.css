@@ -1,0 +1,49 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap');
+@import "tailwindcss";
+
+:root {
+  --background: #F8FAFC;
+  --foreground: #0F172A;
+
+  /* ROHU Brand Colors */
+  --rohu-primary: #1E3A8A;
+  --rohu-primary-light: #3B5CB8;
+  --rohu-primary-dark: #162D6B;
+  --rohu-secondary: #10B981;
+  --rohu-secondary-dark: #065F46;
+  --rohu-accent: #06B6D4;
+  --rohu-accent-light: #22D3EE;
+  --rohu-accent-dark: #0891B2;
+  --rohu-muted: #64748B;
+  --rohu-border: #E2E8F0;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: 'Inter', sans-serif;
+  --font-heading: 'Manrope', sans-serif;
+
+  /* ROHU colors available as Tailwind classes: bg-rohu-primary, text-rohu-secondary, etc */
+  --color-rohu-primary: #1E3A8A;
+  --color-rohu-primary-light: #3B5CB8;
+  --color-rohu-primary-dark: #162D6B;
+  --color-rohu-secondary: #10B981;
+  --color-rohu-secondary-dark: #065F46;
+  --color-rohu-accent: #06B6D4;
+  --color-rohu-accent-light: #22D3EE;
+  --color-rohu-bg: #F8FAFC;
+  --color-rohu-text: #0F172A;
+  --color-rohu-muted: #64748B;
+  --color-rohu-border: #E2E8F0;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: 'Inter', sans-serif;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Manrope', sans-serif;
+}
