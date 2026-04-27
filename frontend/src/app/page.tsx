@@ -3,8 +3,14 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { Zap, CheckCircle } from "lucide-react";
+import { Zap, CheckCircle, Fingerprint } from "lucide-react";
 import { login, register, getMe } from "@/lib/api";
+import {
+  hasPasskeyEnrolledLocally,
+  isPasskeySupported,
+  loginWithPasskey,
+  markPasskeyEnrolledLocally,
+} from "@/lib/webauthn";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -16,16 +22,47 @@ export default function LoginPage() {
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
   const [checking, setChecking] = useState(true);
+  const [showPasskey, setShowPasskey] = useState(false);
+  const [passkeyLoading, setPasskeyLoading] = useState(false);
 
   useEffect(() => {
     if (typeof window !== "undefined" && localStorage.getItem("access_token")) {
       router.push("/dashboard");
-    } else {
-      setChecking(false);
+      return;
+    }
+    setChecking(false);
+    if (hasPasskeyEnrolledLocally()) {
+      isPasskeySupported().then(setShowPasskey).catch(() => setShowPasskey(false));
     }
   }, [router]);
 
   if (checking) return null;
+
+  async function handlePasskeyLogin() {
+    setError("");
+    setSuccess("");
+    setPasskeyLoading(true);
+    try {
+      const result = await loginWithPasskey();
+      localStorage.setItem("access_token", result.access_token);
+      localStorage.setItem("refresh_token", result.refresh_token);
+      localStorage.setItem("user_role", result.role);
+      try {
+        const me = await getMe();
+        localStorage.setItem("user_name", me.full_name);
+      } catch { /* ignore */ }
+      router.push("/dashboard");
+    } catch (err: any) {
+      // If credential is unknown server-side, the local flag is stale — clear it.
+      if (typeof err?.message === "string" && err.message.includes("desconocido")) {
+        markPasskeyEnrolledLocally(false);
+        setShowPasskey(false);
+      }
+      setError(err?.message || "No se pudo iniciar sesión con biometría");
+    } finally {
+      setPasskeyLoading(false);
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -83,6 +120,25 @@ export default function LoginPage() {
             <div className="flex items-center gap-2 p-3 mb-4 bg-rohu-secondary/10 text-rohu-secondary-dark rounded-lg text-sm">
               <CheckCircle className="w-5 h-5 flex-shrink-0" />
               <p>{success}</p>
+            </div>
+          )}
+
+          {showPasskey && !isRegister && (
+            <div className="mb-5">
+              <button
+                type="button"
+                onClick={handlePasskeyLogin}
+                disabled={passkeyLoading || loading}
+                className="w-full py-3 min-h-[52px] bg-rohu-accent text-white font-semibold rounded-lg hover:bg-rohu-accent/90 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+              >
+                <Fingerprint className="w-5 h-5" />
+                {passkeyLoading ? "Verificando..." : "Entrar con Face ID / huella"}
+              </button>
+              <div className="flex items-center gap-3 my-4 text-xs text-rohu-muted">
+                <div className="flex-1 h-px bg-rohu-border" />
+                <span>o usa tu contraseña</span>
+                <div className="flex-1 h-px bg-rohu-border" />
+              </div>
             </div>
           )}
 

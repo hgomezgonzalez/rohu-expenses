@@ -1,8 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { UserCircle, Save, Eye, EyeOff, CheckCircle, XCircle, Send, Info, ToggleLeft, ToggleRight } from "lucide-react";
+import { UserCircle, Save, Eye, EyeOff, CheckCircle, XCircle, Send, Info, ToggleLeft, ToggleRight, Fingerprint, Trash2 } from "lucide-react";
 import { getMe, updateProfile, changePassword, getNotificationConfig, updateNotificationConfig, testNotification, NotificationConfig } from "@/lib/api";
+import {
+  deletePasskey,
+  enrollPasskey,
+  isPasskeySupported,
+  listPasskeys,
+  markPasskeyEnrolledLocally,
+  PasskeyCredential,
+} from "@/lib/webauthn";
 
 export default function ProfilePage() {
   const [user, setUser] = useState<{ email: string; full_name: string; timezone: string } | null>(null);
@@ -39,6 +47,12 @@ export default function ProfilePage() {
   const [pwdSaving, setPwdSaving] = useState(false);
   const [pwdResult, setPwdResult] = useState<{ ok: boolean; msg: string } | null>(null);
 
+  // Passkeys
+  const [passkeySupported, setPasskeySupported] = useState(false);
+  const [passkeys, setPasskeys] = useState<PasskeyCredential[]>([]);
+  const [passkeyBusy, setPasskeyBusy] = useState(false);
+  const [passkeyResult, setPasskeyResult] = useState<{ ok: boolean; msg: string } | null>(null);
+
   useEffect(() => {
     Promise.all([getMe(), getNotificationConfig().catch(() => null)])
       .then(([u, c]) => {
@@ -53,7 +67,57 @@ export default function ProfilePage() {
           setPayCycleDay(c.pay_cycle_start_day ? String(c.pay_cycle_start_day) : "");
         }
       }).finally(() => setLoading(false));
+
+    isPasskeySupported().then(setPasskeySupported).catch(() => setPasskeySupported(false));
+    listPasskeys()
+      .then((items) => {
+        setPasskeys(items);
+        markPasskeyEnrolledLocally(items.length > 0);
+      })
+      .catch(() => {});
   }, []);
+
+  function suggestDeviceName(): string {
+    if (typeof navigator === "undefined") return "Mi dispositivo";
+    const ua = navigator.userAgent;
+    if (/iPhone/i.test(ua)) return "iPhone";
+    if (/iPad/i.test(ua)) return "iPad";
+    if (/Android/i.test(ua)) return "Android";
+    if (/Mac/i.test(ua)) return "Mac";
+    if (/Windows/i.test(ua)) return "Windows";
+    return "Mi dispositivo";
+  }
+
+  async function handleEnrollPasskey() {
+    setPasskeyBusy(true);
+    setPasskeyResult(null);
+    try {
+      const name = window.prompt("¿Qué nombre quieres darle a este dispositivo?", suggestDeviceName()) || suggestDeviceName();
+      const created = await enrollPasskey(name);
+      setPasskeys((prev) => [created, ...prev]);
+      setPasskeyResult({ ok: true, msg: "Passkey registrado en este dispositivo" });
+    } catch (err: any) {
+      setPasskeyResult({ ok: false, msg: err?.message || "No se pudo registrar el passkey" });
+    } finally {
+      setPasskeyBusy(false);
+    }
+  }
+
+  async function handleDeletePasskey(id: string) {
+    setPasskeyBusy(true);
+    setPasskeyResult(null);
+    try {
+      await deletePasskey(id);
+      const remaining = passkeys.filter((p) => p.id !== id);
+      setPasskeys(remaining);
+      if (remaining.length === 0) markPasskeyEnrolledLocally(false);
+      setPasskeyResult({ ok: true, msg: "Passkey eliminado" });
+    } catch (err: any) {
+      setPasskeyResult({ ok: false, msg: err?.message || "No se pudo eliminar" });
+    } finally {
+      setPasskeyBusy(false);
+    }
+  }
 
   async function handleSaveProfile(e: React.FormEvent) {
     e.preventDefault();
@@ -278,6 +342,68 @@ export default function ProfilePage() {
             </div>
           )}
         </div>
+      </div>
+
+      {/* Passkeys (biometric login) */}
+      <div className="bg-white rounded-xl border p-4 md:p-6">
+        <div className="flex items-center gap-3 mb-4">
+          <Fingerprint className="w-5 h-5 text-rohu-accent" />
+          <h2 className="font-bold text-lg">Inicio de sesión con biometría</h2>
+        </div>
+
+        {!passkeySupported ? (
+          <p className="text-sm text-rohu-muted">
+            Tu navegador o dispositivo no soporta passkeys. En celular, abre PayControl en Safari (iOS) o Chrome (Android) sobre HTTPS para habilitar Face ID / huella.
+          </p>
+        ) : (
+          <>
+            <p className="text-sm text-rohu-muted mb-4">
+              Activa Face ID, Touch ID o tu huella en este dispositivo y entra sin teclear contraseña. Funciona offline a nivel del dispositivo y nunca sale del hardware seguro.
+            </p>
+
+            {passkeys.length > 0 && (
+              <ul className="mb-4 divide-y divide-rohu-border border border-rohu-border rounded-lg">
+                {passkeys.map((pk) => (
+                  <li key={pk.id} className="flex items-center justify-between gap-3 px-3 py-2">
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium truncate">{pk.device_name || "Dispositivo"}</div>
+                      <div className="text-xs text-rohu-muted">
+                        Registrado {new Date(pk.created_at).toLocaleDateString()}
+                        {pk.last_used_at && ` · Último uso ${new Date(pk.last_used_at).toLocaleDateString()}`}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleDeletePasskey(pk.id)}
+                      disabled={passkeyBusy}
+                      className="min-h-[44px] min-w-[44px] flex items-center justify-center text-red-600 hover:bg-red-50 rounded-lg disabled:opacity-50"
+                      aria-label="Eliminar passkey"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            <button
+              type="button"
+              onClick={handleEnrollPasskey}
+              disabled={passkeyBusy}
+              className="flex items-center gap-2 px-4 py-2.5 min-h-[44px] bg-rohu-accent text-white text-sm font-medium rounded-lg hover:bg-rohu-accent/90 disabled:opacity-50"
+            >
+              <Fingerprint className="w-4 h-4" />
+              {passkeyBusy ? "Procesando..." : "Activar en este dispositivo"}
+            </button>
+
+            {passkeyResult && (
+              <div className={`flex items-center gap-2 p-2 rounded-lg text-sm mt-3 ${passkeyResult.ok ? "bg-rohu-secondary/10 text-rohu-secondary-dark" : "bg-red-50 text-red-700"}`}>
+                {passkeyResult.ok ? <CheckCircle className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
+                {passkeyResult.msg}
+              </div>
+            )}
+          </>
+        )}
       </div>
 
       {/* Change password */}

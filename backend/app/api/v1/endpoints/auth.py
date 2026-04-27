@@ -1,4 +1,5 @@
 import logging
+import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -12,7 +13,16 @@ from app.api.v1.deps import get_current_user
 from app.models.user import User
 from app.models.user_settings import UserSettings
 from app.schemas.user import UserLogin, UserResponse, TokenResponse
+from app.schemas.webauthn import (
+    PasskeyAuthenticationOptionsResponse,
+    PasskeyAuthenticationVerifyRequest,
+    PasskeyCredentialResponse,
+    PasskeyRegistrationOptionsRequest,
+    PasskeyRegistrationOptionsResponse,
+    PasskeyRegistrationVerifyRequest,
+)
 from app.services.notification_service import send_telegram_with_settings, send_email_with_settings, build_reminder_email
+from app.services import webauthn_service
 
 logger = logging.getLogger(__name__)
 
@@ -129,3 +139,80 @@ async def login(data: UserLogin, db: AsyncSession = Depends(get_db)):
 @router.get("/me", response_model=UserResponse)
 async def get_me(user: User = Depends(get_current_user)):
     return user
+
+
+# ---- Passkey / WebAuthn (biometric login) ----
+
+
+@router.post(
+    "/passkey/register/options",
+    response_model=PasskeyRegistrationOptionsResponse,
+)
+async def passkey_register_options(
+    _data: PasskeyRegistrationOptionsRequest,
+    user: User = Depends(get_current_user),
+):
+    existing_ids = [c.credential_id for c in user.webauthn_credentials]
+    options, state_token = webauthn_service.build_registration_options(user, existing_ids)
+    return PasskeyRegistrationOptionsResponse(options=options, state_token=state_token)
+
+
+@router.post(
+    "/passkey/register/verify",
+    response_model=PasskeyCredentialResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def passkey_register_verify(
+    data: PasskeyRegistrationVerifyRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    credential = await webauthn_service.verify_registration(
+        db=db,
+        user=user,
+        response_payload=data.response,
+        state_token=data.state_token,
+        device_name=data.device_name,
+    )
+    return credential
+
+
+@router.post(
+    "/passkey/login/options",
+    response_model=PasskeyAuthenticationOptionsResponse,
+)
+async def passkey_login_options():
+    options, state_token = webauthn_service.build_authentication_options()
+    return PasskeyAuthenticationOptionsResponse(options=options, state_token=state_token)
+
+
+@router.post("/passkey/login/verify", response_model=TokenResponse)
+async def passkey_login_verify(
+    data: PasskeyAuthenticationVerifyRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    user = await webauthn_service.verify_authentication(
+        db=db, response_payload=data.response, state_token=data.state_token
+    )
+    user.last_login = datetime.now(timezone.utc)
+    await db.flush()
+    return TokenResponse(
+        access_token=create_access_token(str(user.id)),
+        refresh_token=create_refresh_token(str(user.id)),
+        role=user.role,
+    )
+
+
+@router.get("/passkey", response_model=list[PasskeyCredentialResponse])
+async def list_passkeys(user: User = Depends(get_current_user)):
+    return sorted(user.webauthn_credentials, key=lambda c: c.created_at, reverse=True)
+
+
+@router.delete("/passkey/{credential_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_passkey(
+    credential_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    await webauthn_service.delete_user_credential(db, user, credential_id)
+    return None

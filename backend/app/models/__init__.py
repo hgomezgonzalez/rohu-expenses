@@ -9,6 +9,7 @@ from app.models.notification_log import NotificationLog
 from app.models.income_source import IncomeSource
 from app.models.income_entry import IncomeEntry, IncomeEntryStatus
 from app.models.user_settings import UserSettings
+from app.models.webauthn_credential import WebAuthnCredential
 
 __all__ = [
     "User",
@@ -26,4 +27,5 @@ __all__ = [
     "IncomeEntry",
     "IncomeEntryStatus",
     "UserSettings",
+    "WebAuthnCredential",
 ]

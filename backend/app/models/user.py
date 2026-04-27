@@ -34,3 +34,6 @@ class User(Base):
     bill_templates = relationship("BillTemplate", back_populates="user", lazy="selectin")
     income_sources = relationship("IncomeSource", back_populates="user", lazy="selectin")
     income_entries = relationship("IncomeEntry", back_populates="user", lazy="selectin")
+    webauthn_credentials = relationship(
+        "WebAuthnCredential", back_populates="user", lazy="selectin", cascade="all, delete-orphan"
+    )

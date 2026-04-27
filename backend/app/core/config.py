@@ -55,9 +55,23 @@ class Settings(BaseSettings):
     # Frontend
     frontend_url: str = "http://localhost:3000"
 
+    # WebAuthn / Passkeys (biometric login)
+    # RP_ID must match the domain (without scheme/port). Use "localhost" for local dev.
+    webauthn_rp_id: str = "localhost"
+    webauthn_rp_name: str = "ROHU PayControl"
+    # Comma-separated list of allowed origins. Must include scheme.
+    webauthn_origins: str = "http://localhost:3000"
+    # Challenge state token TTL (seconds) — short-lived JWT used to round-trip the
+    # WebAuthn challenge between options and verify endpoints (stateless, no Redis dep).
+    webauthn_challenge_ttl_seconds: int = 300
+
     @property
     def allowed_file_types_list(self) -> list[str]:
         return [t.strip() for t in self.allowed_file_types.split(",")]
+
+    @property
+    def webauthn_origins_list(self) -> list[str]:
+        return [o.strip() for o in self.webauthn_origins.split(",") if o.strip()]
 
     @property
     def max_upload_size_bytes(self) -> int:
