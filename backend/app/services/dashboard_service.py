@@ -24,7 +24,7 @@ from app.schemas.dashboard import (
 )
 from app.schemas.bill import BillInstanceResponse, CategoryResponse
 from app.schemas.income_entry import IncomeEntryResponse
-from app.services.income_service import generate_income_entries
+from app.services.income_service import entry_date as income_entry_date, generate_income_entries
 
 logger = logging.getLogger(__name__)
 
@@ -479,13 +479,13 @@ async def get_full_dashboard_by_cycle(
             for e in entries:
                 if e.status == IncomeEntryStatus.CANCELLED.value:
                     continue
-                # Determine the actual date this income falls on
-                day = e.income_source.day_of_month if e.income_source else 1
-                last_day = cal.monthrange(y, m)[1]
-                entry_date = date(y, m, min(day, last_day))
+                # Single source of truth shared with income_service so the
+                # dashboard cycle and /income agree on cycle membership.
+                # In particular this honors received_at for one-time entries.
+                e_date = income_entry_date(e)
 
-                # Only include if entry_date falls within cycle
-                if cycle_start <= entry_date <= cycle_end:
+                # Only include if entry date falls within cycle
+                if cycle_start <= e_date <= cycle_end:
                     effective = e.actual_amount if e.actual_amount is not None else e.expected_amount
                     total_income += effective
                     if e.status == IncomeEntryStatus.CONFIRMED.value:

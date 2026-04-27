@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { ChevronLeft, ChevronRight, RefreshCw, FileText, Search } from "lucide-react";
 import {
@@ -19,6 +19,7 @@ import { formatCurrency } from "@/lib/utils";
 
 export default function DashboardPage() {
   const router = useRouter();
+  const pathname = usePathname();
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
@@ -44,6 +45,11 @@ export default function DashboardPage() {
   }, []);
 
   const loadData = useCallback(async () => {
+    // Wait until we know whether the user has a pay cycle configured. Without
+    // this guard the first render would fetch in calendar mode (cycle is still
+    // null), and a slower response could overwrite the correct cycle-mode bills
+    // that the second fetch produces.
+    if (cycle === null) return;
     setLoading(true);
     setSyncMsg("");
     try {
@@ -76,11 +82,14 @@ export default function DashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, [year, month, router, isCycleMode, cycleRef]);
+  }, [year, month, router, cycle, isCycleMode, cycleRef]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  // Refetch when tab regains focus or another page mutated income entries.
+  // Refetch when tab regains focus, another page mutated income entries, or
+  // when the user navigates back into /dashboard (Next.js App Router may keep
+  // this client component mounted across route changes — the visibility event
+  // alone doesn't fire on pure in-app navigation, so we also watch pathname).
   useEffect(() => {
     function onVisible() {
       if (document.visibilityState === "visible") loadData();
@@ -93,6 +102,10 @@ export default function DashboardPage() {
       window.removeEventListener(INCOME_CHANGED_EVENT, onIncomeChanged);
     };
   }, [loadData]);
+
+  useEffect(() => {
+    if (pathname === "/dashboard") loadData();
+  }, [pathname, loadData]);
 
   function changeMonth(delta: number) {
     if (isCycleMode) {

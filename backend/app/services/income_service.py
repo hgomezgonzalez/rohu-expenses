@@ -106,20 +106,32 @@ def _months_in_cycle(cycle_start: date, cycle_end: date) -> list[tuple[int, int]
     return months
 
 
-def _entry_date(entry: IncomeEntry) -> date:
+def entry_date(entry: IncomeEntry) -> date:
     """The calendar date this income entry represents.
 
-    Uses the source's day_of_month when available; for one-time entries with no
-    source, uses received_at (if confirmed) or the 1st of the entry's month.
+    Single source of truth shared between income_service and dashboard_service so
+    /income and /dashboard agree on which entries fall inside a pay cycle window.
+
+    Logic:
+    - One-time entries with received_at set → that date (the day the user
+      actually received the money). Covers confirmed puntuales whose
+      "real" date isn't the 1st of the month.
+    - Otherwise, the source's day_of_month if available; clamped to the
+      month's last day.
+    - Fallback: 1st of the entry's month.
     """
+    if entry.income_source is None and entry.received_at is not None:
+        return entry.received_at
     if entry.income_source is not None:
         day = entry.income_source.day_of_month
-    elif entry.received_at is not None:
-        return entry.received_at
     else:
         day = 1
     last_day = calendar.monthrange(entry.year, entry.month)[1]
     return date(entry.year, entry.month, min(day, last_day))
+
+
+# Backwards-compatible alias for any in-process caller still using the old name.
+_entry_date = entry_date
 
 
 async def generate_income_entries_for_cycle(
@@ -191,7 +203,7 @@ async def get_income_entries_by_cycle(
         .order_by(IncomeEntry.name)
     )
     raw = list(result.scalars().all())
-    return [e for e in raw if cycle_start <= _entry_date(e) <= cycle_end]
+    return [e for e in raw if cycle_start <= entry_date(e) <= cycle_end]
 
 
 async def get_income_entry(

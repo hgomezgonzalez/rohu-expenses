@@ -7,7 +7,8 @@ import pytest
 
 from app.api.v1.endpoints.auth import _wa_me_link
 from app.core.pay_cycle import get_pay_cycle, navigate_pay_cycle
-from app.services.income_service import _entry_date, _months_in_cycle
+from app.services.dashboard_service import income_entry_date as dashboard_entry_date
+from app.services.income_service import _entry_date, _months_in_cycle, entry_date
 
 
 # ---- WhatsApp link helper -----------------------------------------------
@@ -106,6 +107,21 @@ def test_entry_date_one_time_uses_received_at_when_present():
 def test_entry_date_one_time_falls_back_to_first_of_month():
     e = _stub_entry(2026, 5, day_of_month=None, received_at=None)
     assert _entry_date(e) == date(2026, 5, 1)
+
+
+def test_entry_date_dashboard_and_income_agree():
+    """Dashboard cycle and /income must compute the same date for any entry —
+    in particular for one-time entries with received_at, which used to differ
+    (dashboard hardcoded day=1, /income honored received_at)."""
+    e = _stub_entry(2026, 5, day_of_month=None, received_at=date(2026, 4, 28))
+    assert entry_date(e) == dashboard_entry_date(e) == date(2026, 4, 28)
+
+    cycle = get_pay_cycle(start_day=26, reference_date=date(2026, 4, 27))
+    cycle_start = date.fromisoformat(cycle["start_date"])
+    cycle_end = date.fromisoformat(cycle["end_date"])
+    # The puntual confirmed on 2026-04-28 belongs to the 26 abr–25 may cycle.
+    assert cycle_start <= entry_date(e) <= cycle_end
+    assert cycle_start <= dashboard_entry_date(e) <= cycle_end
 
 
 # ---- Cycle filter sanity check (the bug we just fixed) -----------------

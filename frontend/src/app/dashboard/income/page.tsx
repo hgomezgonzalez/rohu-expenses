@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { usePathname } from "next/navigation";
 import { Plus, X, Edit2, Trash2, Check, Clock, ChevronLeft, ChevronRight, Ban, RefreshCw } from "lucide-react";
 import {
   getIncomeSources, createIncomeSource, updateIncomeSource, deleteIncomeSource,
@@ -14,6 +15,7 @@ import ConfirmModal from "@/components/ConfirmModal";
 type Tab = "sources" | "entries";
 
 export default function IncomePage() {
+  const pathname = usePathname();
   const [tab, setTab] = useState<Tab>("entries");
 
   // Sources state
@@ -68,8 +70,11 @@ export default function IncomePage() {
     setLoadingSources(false);
   }, []);
 
-  // Load entries (cycle mode if pay cycle is configured, calendar month otherwise)
+  // Load entries (cycle mode if pay cycle is configured, calendar month otherwise).
+  // Wait until the cycle metadata has loaded so we don't race two fetches with
+  // different modes — the slower response could overwrite the correct one.
   const loadEntries = useCallback(async () => {
+    if (cycle === null) return;
     setLoadingEntries(true);
     try {
       const data = isCycleMode
@@ -78,7 +83,7 @@ export default function IncomePage() {
       setEntries(data);
     } catch { /* ignore */ }
     setLoadingEntries(false);
-  }, [year, month, isCycleMode, cycleRef]);
+  }, [year, month, cycle, isCycleMode, cycleRef]);
 
   useEffect(() => { loadSources(); }, [loadSources]);
   useEffect(() => { loadEntries(); }, [loadEntries]);
@@ -88,7 +93,7 @@ export default function IncomePage() {
     getPayCycle(todayIso).then(setCycle).catch(() => {});
   }, [todayIso]);
 
-  // Refetch when tab regains focus (covers "I edited in another tab/page and came back")
+  // Refetch when tab regains focus or another page mutated income entries.
   useEffect(() => {
     function onVisible() {
       if (document.visibilityState === "visible") {
@@ -103,6 +108,11 @@ export default function IncomePage() {
       window.removeEventListener(INCOME_CHANGED_EVENT, onIncomeChanged);
     };
   }, [loadEntries]);
+
+  // Also refetch on pure in-app navigation back to /dashboard/income.
+  useEffect(() => {
+    if (pathname === "/dashboard/income") loadEntries();
+  }, [pathname, loadEntries]);
 
   // Month / cycle navigation
   function prevPeriod() {
