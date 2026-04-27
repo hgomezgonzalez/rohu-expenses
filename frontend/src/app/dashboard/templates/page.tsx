@@ -227,7 +227,7 @@ export default function TemplatesPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-rohu-muted mb-1">Monto estimado *</label>
-                  <input type="number" step="100" min="1" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="150000" className={inputClass} required />
+                  <input type="number" step="any" min="1" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="150000" className={inputClass} required />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-rohu-muted mb-1">Día vencimiento *</label>
