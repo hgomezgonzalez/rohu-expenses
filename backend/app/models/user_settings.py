@@ -36,6 +36,9 @@ class UserSettings(Base):
     notification_hour: Mapped[int] = mapped_column(Integer, default=8)
     notification_minute: Mapped[int] = mapped_column(Integer, default=0)
 
+    # Pay cycle: day of month when user gets paid (null = calendar month)
+    pay_cycle_start_day: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )

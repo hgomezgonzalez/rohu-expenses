@@ -52,6 +52,7 @@ async def get_notification_config(
         telegram_enabled=s.telegram_enabled,
         notification_hour=s.notification_hour,
         notification_minute=s.notification_minute,
+        pay_cycle_start_day=s.pay_cycle_start_day,
     )
 
 
@@ -97,6 +98,7 @@ async def update_notification_config(
         telegram_enabled=s.telegram_enabled,
         notification_hour=s.notification_hour,
         notification_minute=s.notification_minute,
+        pay_cycle_start_day=s.pay_cycle_start_day,
     )
 
 

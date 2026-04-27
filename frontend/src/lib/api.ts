@@ -143,6 +143,25 @@ export async function getDashboardFull(year: number, month: number) {
   return request<DashboardFullResponse>(`/dashboard/full?year=${year}&month=${month}`);
 }
 
+export async function getDashboardByCycle(refDate: string) {
+  return request<DashboardFullResponse>(`/dashboard/full?mode=cycle&ref_date=${refDate}`);
+}
+
+export interface PayCycleResponse {
+  configured: boolean;
+  start_date?: string;
+  end_date?: string;
+  label?: string;
+  start_day?: number;
+}
+
+export async function getPayCycle(refDate?: string, delta?: number) {
+  const params = new URLSearchParams();
+  if (refDate) params.set("ref_date", refDate);
+  if (delta) params.set("delta", String(delta));
+  return request<PayCycleResponse>(`/dashboard/pay-cycle?${params}`);
+}
+
 // Notification settings
 export async function getNotificationConfig() {
   return request<NotificationConfig>("/notifications/config");
@@ -502,6 +521,7 @@ export interface NotificationConfig {
   telegram_enabled: boolean;
   notification_hour: number;
   notification_minute: number;
+  pay_cycle_start_day: number | null;
 }
 
 export interface NotificationConfigUpdate {

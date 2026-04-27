@@ -165,6 +165,9 @@ async def main():
         await conn.execute(text(
             "ALTER TABLE income_sources ADD COLUMN IF NOT EXISTS income_type VARCHAR(20) NOT NULL DEFAULT 'recurring'"
         ))
+        await conn.execute(text(
+            "ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS pay_cycle_start_day INTEGER"
+        ))
     print("Schema migrations applied.")
 
     # Create all tables (creates new tables like income_entries, skips existing)

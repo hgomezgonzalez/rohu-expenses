@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ChevronLeft, ChevronRight, RefreshCw, FileText, Search } from "lucide-react";
 import {
-  getDashboardFull, generateBillInstances,
+  getDashboardFull, getDashboardByCycle, generateBillInstances,
+  getPayCycle, PayCycleResponse,
   DashboardSummary, CashflowForecast, BillInstance,
 } from "@/lib/api";
 import { getMonthName } from "@/lib/utils";
@@ -32,28 +33,41 @@ export default function DashboardPage() {
   const [syncMsg, setSyncMsg] = useState("");
   const [userName, setUserName] = useState("");
 
+  // Pay cycle state
+  const [viewMode, setViewMode] = useState<"calendar" | "cycle">("calendar");
+  const [cycle, setCycle] = useState<PayCycleResponse | null>(null);
+  const [cycleRef, setCycleRef] = useState(new Date().toISOString().slice(0, 10));
+
   useEffect(() => {
     setUserName(localStorage.getItem("user_name") || "");
+    getPayCycle().then((c) => setCycle(c)).catch(() => {});
   }, []);
 
   const loadData = useCallback(async () => {
     setLoading(true);
     setSyncMsg("");
     try {
-      // Always generate + sync first (idempotent — won't create duplicates)
-      const gen = await generateBillInstances(year, month).catch(() => null);
-      if (gen && (gen.created > 0 || gen.synced > 0)) {
-        const parts = [];
-        if (gen.created > 0) parts.push(`${gen.created} creada${gen.created > 1 ? "s" : ""}`);
-        if (gen.synced > 0) parts.push(`${gen.synced} sincronizada${gen.synced > 1 ? "s" : ""}`);
-        setSyncMsg(parts.join(", "));
-        setTimeout(() => setSyncMsg(""), 4000);
+      if (viewMode === "cycle" && cycle?.configured) {
+        // Cycle mode: load by date range
+        const data = await getDashboardByCycle(cycleRef);
+        setSummary(data.summary);
+        setCashflow(data.cashflow);
+        setBills(data.bills);
+      } else {
+        // Calendar mode: generate + load by month
+        const gen = await generateBillInstances(year, month).catch(() => null);
+        if (gen && (gen.created > 0 || gen.synced > 0)) {
+          const parts = [];
+          if (gen.created > 0) parts.push(`${gen.created} creada${gen.created > 1 ? "s" : ""}`);
+          if (gen.synced > 0) parts.push(`${gen.synced} sincronizada${gen.synced > 1 ? "s" : ""}`);
+          setSyncMsg(parts.join(", "));
+          setTimeout(() => setSyncMsg(""), 4000);
+        }
+        const data = await getDashboardFull(year, month);
+        setSummary(data.summary);
+        setCashflow(data.cashflow);
+        setBills(data.bills);
       }
-      // Then load full dashboard (includes status update)
-      const data = await getDashboardFull(year, month);
-      setSummary(data.summary);
-      setCashflow(data.cashflow);
-      setBills(data.bills);
     } catch (err: any) {
       if (err.message?.includes("401") || err.message?.includes("Invalid")) {
         localStorage.removeItem("access_token");
@@ -62,11 +76,23 @@ export default function DashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, [year, month, router]);
+  }, [year, month, router, viewMode, cycle, cycleRef]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
   function changeMonth(delta: number) {
+    if (viewMode === "cycle" && cycle?.configured) {
+      // Navigate cycles
+      getPayCycle(cycleRef, delta).then((c) => {
+        if (c.start_date) {
+          setCycleRef(c.start_date);
+          setCycle(c);
+        }
+      });
+      setBillSearch("");
+      setBillStatusFilter("all");
+      return;
+    }
     let newMonth = month + delta;
     let newYear = year;
     if (newMonth > 12) { newMonth = 1; newYear++; }
@@ -112,12 +138,28 @@ export default function DashboardPage() {
         </button>
       </div>
 
-      {/* Month selector */}
+      {/* Mode toggle (only if pay cycle configured) */}
+      {cycle?.configured && (
+        <div className="flex gap-1 bg-gray-100 p-1 rounded-xl">
+          <button onClick={() => setViewMode("calendar")}
+            className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-all ${viewMode === "calendar" ? "bg-white text-rohu-primary shadow-sm" : "text-gray-500"}`}>
+            Mes calendario
+          </button>
+          <button onClick={() => setViewMode("cycle")}
+            className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-all ${viewMode === "cycle" ? "bg-white text-rohu-primary shadow-sm" : "text-gray-500"}`}>
+            Ciclo de pago
+          </button>
+        </div>
+      )}
+
+      {/* Period selector */}
       <div className="flex items-center justify-between bg-white rounded-xl border px-4 py-3">
         <button onClick={() => changeMonth(-1)} className="p-2 hover:bg-gray-100 rounded-lg">
           <ChevronLeft className="w-5 h-5" />
         </button>
-        <h2 className="text-xl font-bold">{getMonthName(month)} {year}</h2>
+        <h2 className="text-xl font-bold">
+          {viewMode === "cycle" && cycle?.label ? cycle.label : `${getMonthName(month)} ${year}`}
+        </h2>
         <button onClick={() => changeMonth(1)} className="p-2 hover:bg-gray-100 rounded-lg">
           <ChevronRight className="w-5 h-5" />
         </button>

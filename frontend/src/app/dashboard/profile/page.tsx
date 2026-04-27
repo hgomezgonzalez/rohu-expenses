@@ -15,6 +15,11 @@ export default function ProfilePage() {
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileResult, setProfileResult] = useState<{ ok: boolean; msg: string } | null>(null);
 
+  // Pay cycle
+  const [payCycleDay, setPayCycleDay] = useState<string>("");
+  const [cycleSaving, setCycleSaving] = useState(false);
+  const [cycleResult, setCycleResult] = useState<{ ok: boolean; msg: string } | null>(null);
+
   // Telegram form
   const [notifConfig, setNotifConfig] = useState<NotificationConfig | null>(null);
   const [tgToken, setTgToken] = useState("");
@@ -45,6 +50,7 @@ export default function ProfilePage() {
           setNotifConfig(c);
           setTgChatId(c.telegram_chat_id);
           setTgEnabled(c.telegram_enabled);
+          setPayCycleDay(c.pay_cycle_start_day ? String(c.pay_cycle_start_day) : "");
         }
       }).finally(() => setLoading(false));
   }, []);
@@ -143,6 +149,48 @@ export default function ProfilePage() {
             {profileSaving ? "Guardando..." : "Guardar perfil"}
           </button>
         </form>
+      </div>
+
+      {/* Pay cycle config */}
+      <div className="bg-white rounded-xl border p-4 md:p-6">
+        <div className="flex items-center gap-3 mb-4">
+          <svg className="w-5 h-5 text-rohu-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+          </svg>
+          <h2 className="font-bold text-lg">Ciclo de pago</h2>
+        </div>
+
+        <p className="text-sm text-rohu-muted mb-4">
+          Configura el dia en que recibes tu ingreso principal. El dashboard mostrara tus facturas agrupadas por ciclo de pago en vez de mes calendario.
+        </p>
+
+        <div className="flex items-center gap-3">
+          <select value={payCycleDay} onChange={(e) => setPayCycleDay(e.target.value)} className={inputClass + " max-w-[200px]"}>
+            <option value="">No configurar (mes)</option>
+            {Array.from({ length: 31 }, (_, i) => (
+              <option key={i + 1} value={String(i + 1)}>Dia {i + 1}</option>
+            ))}
+          </select>
+          <button onClick={async () => {
+            setCycleSaving(true); setCycleResult(null);
+            try {
+              const val = payCycleDay ? parseInt(payCycleDay) : null;
+              await updateNotificationConfig({ pay_cycle_start_day: val } as any);
+              setCycleResult({ ok: true, msg: val ? `Ciclo configurado: dia ${val}` : "Ciclo desactivado" });
+            } catch (err: any) { setCycleResult({ ok: false, msg: err.message }); }
+            setCycleSaving(false);
+          }} disabled={cycleSaving}
+            className="flex items-center gap-2 px-4 py-2.5 min-h-[44px] bg-rohu-primary text-white text-sm font-medium rounded-lg hover:bg-rohu-primary-dark disabled:opacity-50">
+            <Save className="w-4 h-4" />{cycleSaving ? "Guardando..." : "Guardar"}
+          </button>
+        </div>
+
+        {cycleResult && (
+          <div className={`flex items-center gap-2 p-2 rounded-lg text-sm mt-3 ${cycleResult.ok ? "bg-rohu-secondary/10 text-rohu-secondary-dark" : "bg-red-50 text-red-700"}`}>
+            {cycleResult.ok ? <CheckCircle className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
+            {cycleResult.msg}
+          </div>
+        )}
       </div>
 
       {/* Telegram notifications */}

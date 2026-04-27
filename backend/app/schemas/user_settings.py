@@ -22,6 +22,9 @@ class UserSettingsUpdate(BaseModel):
     notification_hour: int | None = None
     notification_minute: int | None = None
 
+    # Pay cycle
+    pay_cycle_start_day: int | None = None
+
 
 class UserSettingsResponse(BaseModel):
     # SMTP (password masked)
@@ -43,3 +46,6 @@ class UserSettingsResponse(BaseModel):
     # Schedule
     notification_hour: int
     notification_minute: int
+
+    # Pay cycle
+    pay_cycle_start_day: int | None

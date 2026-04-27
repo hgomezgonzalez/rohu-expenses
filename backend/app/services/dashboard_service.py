@@ -382,3 +382,96 @@ async def get_full_dashboard(
         summary=summary, cashflow=cashflow,
         income_entries=income_responses, bills=all_bills,
     )
+
+
+async def get_full_dashboard_by_cycle(
+    db: AsyncSession, user_id: uuid.UUID, cycle_start: date, cycle_end: date
+) -> DashboardFull:
+    """Dashboard filtered by pay cycle date range instead of calendar month."""
+    # Bills within the cycle window
+    result = await db.execute(
+        select(BillInstance)
+        .options(joinedload(BillInstance.category), joinedload(BillInstance.payments))
+        .where(
+            BillInstance.user_id == user_id,
+            BillInstance.due_date >= cycle_start,
+            BillInstance.due_date <= cycle_end,
+        )
+        .order_by(BillInstance.due_date)
+    )
+    instances = list(result.scalars().unique().all())
+
+    overdue_bills, due_soon_bills, upcoming_bills = [], [], []
+    total_pending, total_paid_amount, total_overdue = Decimal("0"), Decimal("0"), Decimal("0")
+    count_pending, count_paid, count_overdue, count_due_soon = 0, 0, 0, 0
+    all_bills = []
+
+    for inst in instances:
+        paid = sum(p.amount for p in inst.payments) if inst.payments else Decimal("0")
+        bill_resp = BillInstanceResponse(
+            id=inst.id, bill_template_id=inst.bill_template_id,
+            category=CategoryResponse.model_validate(inst.category),
+            year=inst.year, month=inst.month, name=inst.name,
+            expected_amount=inst.expected_amount, due_date=inst.due_date,
+            status=inst.status, notes=inst.notes, paid_at=inst.paid_at,
+            total_paid=paid, created_at=inst.created_at,
+        )
+        all_bills.append(bill_resp)
+
+        if inst.status == BillStatus.PAID:
+            total_paid_amount += paid; count_paid += 1
+        elif inst.status == BillStatus.OVERDUE:
+            total_overdue += inst.expected_amount; count_overdue += 1; overdue_bills.append(bill_resp)
+        elif inst.status == BillStatus.DUE_SOON:
+            total_pending += inst.expected_amount; count_due_soon += 1; due_soon_bills.append(bill_resp)
+        else:
+            total_pending += inst.expected_amount; count_pending += 1; upcoming_bills.append(bill_resp)
+
+    summary = DashboardSummary(
+        total_pending=total_pending + total_overdue, total_paid=total_paid_amount,
+        total_overdue=total_overdue, count_pending=count_pending, count_paid=count_paid,
+        count_overdue=count_overdue, count_due_soon=count_due_soon,
+        overdue_bills=overdue_bills, due_soon_bills=due_soon_bills, upcoming_bills=upcoming_bills,
+    )
+
+    # Income: sum entries from months that overlap with the cycle
+    months_in_cycle = set()
+    d = cycle_start
+    while d <= cycle_end:
+        months_in_cycle.add((d.year, d.month))
+        if d.month == 12:
+            d = date(d.year + 1, 1, 1)
+        else:
+            d = date(d.year, d.month + 1, 1)
+
+    total_income = Decimal("0")
+    income_confirmed = Decimal("0")
+    income_expected = Decimal("0")
+    breakdown = []
+    all_income_entries = []
+
+    for y, m in sorted(months_in_cycle):
+        inc_total, inc_conf, inc_exp, inc_breakdown, inc_entries = await _get_monthly_income(db, user_id, y, m)
+        total_income += inc_total
+        income_confirmed += inc_conf
+        income_expected += inc_exp
+        breakdown.extend(inc_breakdown)
+        all_income_entries.extend(inc_entries)
+
+    cf_pending = total_pending + total_overdue
+    projected = total_income - total_paid_amount - cf_pending
+
+    cashflow = CashflowForecast(
+        year=cycle_start.year, month=cycle_start.month, total_income=total_income,
+        income_confirmed=income_confirmed, income_expected=income_expected,
+        income_breakdown=breakdown,
+        total_paid=total_paid_amount, total_pending=cf_pending,
+        projected_balance=projected, is_negative=projected < 0,
+    )
+
+    income_responses = [IncomeEntryResponse.model_validate(e) for e in all_income_entries]
+
+    return DashboardFull(
+        summary=summary, cashflow=cashflow,
+        income_entries=income_responses, bills=all_bills,
+    )
