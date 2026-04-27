@@ -21,6 +21,7 @@ from app.services.notification_service import (
     send_email_with_settings, send_telegram_with_settings,
     build_reminder_email, build_reminder_telegram,
     build_income_reminder_email, build_income_reminder_telegram,
+    get_admin_smtp_settings,
 )
 
 logger = logging.getLogger(__name__)
@@ -47,6 +48,9 @@ async def check_and_send_reminders():
         # Cache user_settings per user_id
         settings_cache: dict[str, UserSettings | None] = {}
 
+        # Get admin SMTP settings for fallback email sending
+        admin_smtp = await get_admin_smtp_settings(db)
+
         sent_count = 0
         for instance in instances:
             days_until_due = (instance.due_date - today).days
@@ -65,8 +69,6 @@ async def check_and_send_reminders():
                 settings_cache[user_id_str] = us_result.scalars().first()
 
             user_settings = settings_cache[user_id_str]
-            if not user_settings:
-                continue
 
             for rule in template.notification_rules:
                 if not rule.is_active:
@@ -106,24 +108,28 @@ async def check_and_send_reminders():
                     success = False
                     recipient = ""
 
-                    if channel == "email" and user_settings.email_enabled:
-                        recipient = user.email
-                        html = build_reminder_email(instance.name, amount, due_str, days_text)
-                        success = await send_email_with_settings(
-                            user_settings, user.email,
-                            f"💰 {days_text} - {instance.name}", html
-                        )
-                        # Send to extra emails too
-                        for extra in rule.extra_emails_list:
-                            await send_email_with_settings(
-                                user_settings, extra,
+                    if channel == "email":
+                        # Use user's SMTP if configured, otherwise admin's SMTP as fallback
+                        smtp_settings = user_settings if (user_settings and user_settings.email_enabled and user_settings.smtp_host) else admin_smtp
+                        if smtp_settings:
+                            recipient = user.email
+                            html = build_reminder_email(instance.name, amount, due_str, days_text)
+                            success = await send_email_with_settings(
+                                smtp_settings, user.email,
                                 f"💰 {days_text} - {instance.name}", html
                             )
+                            for extra in rule.extra_emails_list:
+                                await send_email_with_settings(
+                                    smtp_settings, extra,
+                                    f"💰 {days_text} - {instance.name}", html
+                                )
 
-                    elif channel == "telegram" and user_settings.telegram_enabled:
-                        recipient = "telegram"
-                        msg = build_reminder_telegram(instance.name, amount, due_str, days_text)
-                        success = await send_telegram_with_settings(user_settings, msg)
+                    elif channel == "telegram":
+                        # Telegram always uses user's own settings
+                        if user_settings and user_settings.telegram_enabled:
+                            recipient = "telegram"
+                            msg = build_reminder_telegram(instance.name, amount, due_str, days_text)
+                            success = await send_telegram_with_settings(user_settings, msg)
 
                     if not recipient:
                         continue
@@ -142,7 +148,7 @@ async def check_and_send_reminders():
                         sent_count += 1
 
         # --- Income unconfirmed reminders ---
-        income_sent = await _check_unconfirmed_income(db, settings_cache, today)
+        income_sent = await _check_unconfirmed_income(db, settings_cache, today, admin_smtp)
         sent_count += income_sent
 
         await db.commit()
@@ -154,7 +160,7 @@ MAX_INCOME_REMINDERS = 3
 
 
 async def _check_unconfirmed_income(
-    db: AsyncSession, settings_cache: dict, today: date
+    db: AsyncSession, settings_cache: dict, today: date, admin_smtp=None
 ) -> int:
     """Send reminders for unconfirmed income entries past their expected day."""
     sent_count = 0
@@ -191,8 +197,6 @@ async def _check_unconfirmed_income(
             settings_cache[user_id_str] = us_result.scalars().first()
 
         user_settings = settings_cache.get(user_id_str)
-        if not user_settings:
-            continue
 
         # Load user for email
         user_result = await db.execute(select(User).where(User.id == entry.user_id))
@@ -203,16 +207,18 @@ async def _check_unconfirmed_income(
         amount = f"${entry.expected_amount:,.0f}"
         subject = f"💵 Ingreso pendiente - {entry.name}"
 
-        # Send via telegram first, then email
-        if user_settings.telegram_enabled:
+        # Telegram: user's own settings
+        if user_settings and user_settings.telegram_enabled:
             msg = build_income_reminder_telegram(entry.name, amount, day_of_month)
             success = await send_telegram_with_settings(user_settings, msg)
             if success:
                 sent_count += 1
 
-        if user_settings.email_enabled:
+        # Email: user's SMTP or admin's SMTP as fallback
+        smtp_settings = user_settings if (user_settings and user_settings.email_enabled and user_settings.smtp_host) else admin_smtp
+        if smtp_settings:
             html = build_income_reminder_email(entry.name, amount, day_of_month)
-            success = await send_email_with_settings(user_settings, user.email, subject, html)
+            success = await send_email_with_settings(smtp_settings, user.email, subject, html)
             if success:
                 sent_count += 1
 

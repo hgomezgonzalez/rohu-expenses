@@ -12,6 +12,33 @@ from app.core.encryption import decrypt
 
 logger = logging.getLogger(__name__)
 
+_admin_smtp_settings = None
+
+
+async def get_admin_smtp_settings(db):
+    """Get and cache the admin's SMTP settings for fallback email sending."""
+    global _admin_smtp_settings
+    if _admin_smtp_settings is not None:
+        return _admin_smtp_settings
+
+    from sqlalchemy import select
+    from app.models.user import User
+    from app.models.user_settings import UserSettings
+
+    result = await db.execute(
+        select(UserSettings).join(User, UserSettings.user_id == User.id)
+        .where(User.role == "admin", User.is_active == True)
+        .where(UserSettings.email_enabled == True)
+    )
+    _admin_smtp_settings = result.scalars().first()
+    return _admin_smtp_settings
+
+
+def reset_admin_smtp_cache():
+    """Reset cache when admin settings change."""
+    global _admin_smtp_settings
+    _admin_smtp_settings = None
+
 
 async def send_email_with_settings(user_settings, to: str, subject: str, body_html: str) -> bool:
     """Send email using SMTP config from user_settings (DB)."""
