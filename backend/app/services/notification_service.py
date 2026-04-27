@@ -29,13 +29,18 @@ async def send_email_with_settings(user_settings, to: str, subject: str, body_ht
         message["Subject"] = subject
         message.attach(MIMEText(body_html, "html"))
 
+        # Port 587 = STARTTLS, Port 465 = implicit SSL
+        use_tls = user_settings.smtp_tls and user_settings.smtp_port == 465
+        start_tls = user_settings.smtp_tls and user_settings.smtp_port != 465
+
         await aiosmtplib.send(
             message,
             hostname=user_settings.smtp_host,
             port=user_settings.smtp_port,
             username=user_settings.smtp_user,
             password=password,
-            use_tls=user_settings.smtp_tls,
+            use_tls=use_tls,
+            start_tls=start_tls,
         )
         logger.info("Email sent to %s: %s", to, subject)
         return True
