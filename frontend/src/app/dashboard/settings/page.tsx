@@ -70,17 +70,20 @@ export default function SettingsPage() {
     setSaving("smtp");
     setSaveResult(null);
     try {
+      // Auto-enable email if credentials are set
+      const shouldEnable = emailEnabled || (!!smtpHost && !!smtpUser && (!!smtpPassword || !!config?.smtp_password_set));
       const data: Record<string, any> = {
         smtp_host: smtpHost,
         smtp_port: parseInt(smtpPort),
         smtp_user: smtpUser,
         smtp_from_email: smtpFromEmail || smtpUser,
         smtp_tls: smtpTls,
-        email_enabled: emailEnabled,
+        email_enabled: shouldEnable,
       };
       if (smtpPassword) data.smtp_password = smtpPassword;
       const updated = await updateNotificationConfig(data);
       setConfig(updated);
+      setEmailEnabled(updated.email_enabled);
       setSmtpPassword("");
       setSaveResult({ section: "smtp", ok: true });
     } catch {
@@ -94,13 +97,16 @@ export default function SettingsPage() {
     setSaving("telegram");
     setSaveResult(null);
     try {
+      // Auto-enable telegram if credentials are set
+      const shouldEnable = telegramEnabled || (!!telegramChatId && (!!telegramToken || !!config?.telegram_bot_token_set));
       const data: Record<string, any> = {
         telegram_chat_id: telegramChatId,
-        telegram_enabled: telegramEnabled,
+        telegram_enabled: shouldEnable,
       };
       if (telegramToken) data.telegram_bot_token = telegramToken;
       const updated = await updateNotificationConfig(data);
       setConfig(updated);
+      setTelegramEnabled(updated.telegram_enabled);
       setTelegramToken("");
       setSaveResult({ section: "telegram", ok: true });
     } catch {
