@@ -434,7 +434,8 @@ async def get_full_dashboard_by_cycle(
         overdue_bills=overdue_bills, due_soon_bills=due_soon_bills, upcoming_bills=upcoming_bills,
     )
 
-    # Income: sum entries from months that overlap with the cycle
+    # Income: only include entries whose day_of_month falls within the cycle range
+    import calendar as cal
     months_in_cycle = set()
     d = cycle_start
     while d <= cycle_end:
@@ -451,12 +452,66 @@ async def get_full_dashboard_by_cycle(
     all_income_entries = []
 
     for y, m in sorted(months_in_cycle):
-        inc_total, inc_conf, inc_exp, inc_breakdown, inc_entries = await _get_monthly_income(db, user_id, y, m)
-        total_income += inc_total
-        income_confirmed += inc_conf
-        income_expected += inc_exp
-        breakdown.extend(inc_breakdown)
-        all_income_entries.extend(inc_entries)
+        # Get entries for this month
+        result_inc = await db.execute(
+            select(IncomeEntry).where(
+                IncomeEntry.user_id == user_id,
+                IncomeEntry.year == y,
+                IncomeEntry.month == m,
+            )
+        )
+        entries = list(result_inc.scalars().all())
+
+        if entries:
+            for e in entries:
+                if e.status == IncomeEntryStatus.CANCELLED.value:
+                    continue
+                # Determine the actual date this income falls on
+                day = e.income_source.day_of_month if e.income_source else 1
+                last_day = cal.monthrange(y, m)[1]
+                entry_date = date(y, m, min(day, last_day))
+
+                # Only include if entry_date falls within cycle
+                if cycle_start <= entry_date <= cycle_end:
+                    effective = e.actual_amount if e.actual_amount is not None else e.expected_amount
+                    total_income += effective
+                    if e.status == IncomeEntryStatus.CONFIRMED.value:
+                        income_confirmed += e.actual_amount or Decimal("0")
+                    else:
+                        income_expected += e.expected_amount
+                    breakdown.append(IncomeBreakdown(
+                        source_id=str(e.income_source_id) if e.income_source_id else None,
+                        source_name=e.name,
+                        expected_amount=e.expected_amount,
+                        actual_amount=e.actual_amount,
+                        effective_amount=effective,
+                        status=e.status,
+                        is_one_time=e.is_one_time,
+                    ))
+                    all_income_entries.append(e)
+        else:
+            # Fallback: use income_sources templates, filtered by day_of_month
+            result_src = await db.execute(
+                select(IncomeSource).where(
+                    IncomeSource.user_id == user_id,
+                    IncomeSource.is_active == True,
+                )
+            )
+            for s in result_src.scalars().all():
+                last_day = cal.monthrange(y, m)[1]
+                source_date = date(y, m, min(s.day_of_month, last_day))
+                if cycle_start <= source_date <= cycle_end:
+                    total_income += s.amount
+                    income_expected += s.amount
+                    breakdown.append(IncomeBreakdown(
+                        source_id=str(s.id),
+                        source_name=s.name,
+                        expected_amount=s.amount,
+                        actual_amount=None,
+                        effective_amount=s.amount,
+                        status="template_fallback",
+                        is_one_time=False,
+                    ))
 
     cf_pending = total_pending + total_overdue
     projected = total_income - total_paid_amount - cf_pending
