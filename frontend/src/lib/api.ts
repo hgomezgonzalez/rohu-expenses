@@ -21,7 +21,13 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.detail || `Error ${res.status}`);
+    let msg = `Error ${res.status}`;
+    if (typeof body.detail === "string") {
+      msg = body.detail;
+    } else if (Array.isArray(body.detail)) {
+      msg = body.detail.map((d: any) => d.msg || d.message || JSON.stringify(d)).join(". ");
+    }
+    throw new Error(msg);
   }
   if (res.status === 204) return undefined as T;
   return res.json();
@@ -109,7 +115,13 @@ export async function recordPayment(instanceId: string, data: FormData) {
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.detail || `Error ${res.status}`);
+    let msg = `Error ${res.status}`;
+    if (typeof body.detail === "string") {
+      msg = body.detail;
+    } else if (Array.isArray(body.detail)) {
+      msg = body.detail.map((d: any) => d.msg || d.message || JSON.stringify(d)).join(". ");
+    }
+    throw new Error(msg);
   }
   return res.json();
 }
