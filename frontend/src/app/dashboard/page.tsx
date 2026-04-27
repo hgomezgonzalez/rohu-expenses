@@ -34,9 +34,9 @@ export default function DashboardPage() {
   const [userName, setUserName] = useState("");
 
   // Pay cycle state
-  const [viewMode, setViewMode] = useState<"calendar" | "cycle">("calendar");
   const [cycle, setCycle] = useState<PayCycleResponse | null>(null);
   const [cycleRef, setCycleRef] = useState(new Date().toISOString().slice(0, 10));
+  const isCycleMode = !!cycle?.configured;
 
   useEffect(() => {
     setUserName(localStorage.getItem("user_name") || "");
@@ -47,7 +47,7 @@ export default function DashboardPage() {
     setLoading(true);
     setSyncMsg("");
     try {
-      if (viewMode === "cycle" && cycle?.configured) {
+      if (isCycleMode) {
         // Cycle mode: load by date range
         const data = await getDashboardByCycle(cycleRef);
         setSummary(data.summary);
@@ -76,12 +76,12 @@ export default function DashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, [year, month, router, viewMode, cycle, cycleRef]);
+  }, [year, month, router, isCycleMode, cycleRef]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
   function changeMonth(delta: number) {
-    if (viewMode === "cycle" && cycle?.configured) {
+    if (isCycleMode) {
       // Navigate cycles
       getPayCycle(cycleRef, delta).then((c) => {
         if (c.start_date) {
@@ -138,27 +138,13 @@ export default function DashboardPage() {
         </button>
       </div>
 
-      {/* Mode toggle (only if pay cycle configured) */}
-      {cycle?.configured && (
-        <div className="flex gap-1 bg-gray-100 p-1 rounded-xl">
-          <button onClick={() => setViewMode("calendar")}
-            className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-all ${viewMode === "calendar" ? "bg-white text-rohu-primary shadow-sm" : "text-gray-500"}`}>
-            Mes calendario
-          </button>
-          <button onClick={() => setViewMode("cycle")}
-            className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-all ${viewMode === "cycle" ? "bg-white text-rohu-primary shadow-sm" : "text-gray-500"}`}>
-            Ciclo de pago
-          </button>
-        </div>
-      )}
-
       {/* Period selector */}
       <div className="flex items-center justify-between bg-white rounded-xl border px-4 py-3">
         <button onClick={() => changeMonth(-1)} className="p-2 hover:bg-gray-100 rounded-lg">
           <ChevronLeft className="w-5 h-5" />
         </button>
         <h2 className="text-xl font-bold">
-          {viewMode === "cycle" && cycle?.label ? cycle.label : `${getMonthName(month)} ${year}`}
+          {isCycleMode && cycle?.label ? cycle.label : `${getMonthName(month)} ${year}`}
         </h2>
         <button onClick={() => changeMonth(1)} className="p-2 hover:bg-gray-100 rounded-lg">
           <ChevronRight className="w-5 h-5" />
@@ -174,7 +160,7 @@ export default function DashboardPage() {
       {/* Bills list */}
       <div>
         <div className="flex items-center justify-between mb-3">
-          <h3 className="font-bold text-lg">Facturas del mes</h3>
+          <h3 className="font-bold text-lg">{isCycleMode ? "Facturas del ciclo" : "Facturas del mes"}</h3>
         </div>
 
         {/* Search & filter */}
@@ -218,6 +204,15 @@ export default function DashboardPage() {
             {sortedBills.map((bill) => (
               <BillCard key={bill.id} bill={bill} onMarkPaid={setPayingBill} />
             ))}
+          </div>
+        )}
+
+        {/* Discrete link to calendar view */}
+        {isCycleMode && (
+          <div className="text-center pt-4">
+            <Link href="/dashboard/payments" className="text-sm text-rohu-muted hover:text-rohu-primary hover:underline">
+              Ver facturas por mes calendario →
+            </Link>
           </div>
         )}
       </div>
