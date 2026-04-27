@@ -43,9 +43,11 @@ export default function Sidebar() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [counts, setCounts] = useState<{ overdue: number; pending: number; paid: number }>({ overdue: 0, pending: 0, paid: 0 });
   const [showMore, setShowMore] = useState(false);
+  const [userName, setUserName] = useState("");
 
   useEffect(() => {
     setIsAdmin(localStorage.getItem("user_role") === "admin");
+    setUserName(localStorage.getItem("user_name") || "");
     const now = new Date();
     getDashboardFull(now.getFullYear(), now.getMonth() + 1)
       .then((data) => {
@@ -118,6 +120,11 @@ export default function Sidebar() {
         </nav>
 
         <div className="px-3 py-3 border-t border-white/10 space-y-2">
+          {userName && (
+            <div className="px-3 py-1.5 text-xs text-white/60 truncate">
+              {userName}
+            </div>
+          )}
           <button
             onClick={handleLogout}
             className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-white/70 hover:bg-white/10 hover:text-white w-full transition-colors"
@@ -137,7 +144,10 @@ export default function Sidebar() {
           <div className="absolute inset-0 bg-black/50" onClick={() => setShowMore(false)} />
           <div className="absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl pb-[env(safe-area-inset-bottom)] animate-slide-up">
             <div className="flex items-center justify-between px-5 py-4 border-b">
-              <h3 className="font-bold text-lg">Más opciones</h3>
+              <div>
+                <h3 className="font-bold text-lg">{userName || "Más opciones"}</h3>
+                {userName && <p className="text-xs text-gray-400">Más opciones</p>}
+              </div>
               <button onClick={() => setShowMore(false)} className="p-2 hover:bg-gray-100 rounded-lg">
                 <X className="w-5 h-5" />
               </button>

@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { UserCircle, Save, Eye, EyeOff, CheckCircle, XCircle } from "lucide-react";
-import { getMe, updateProfile, changePassword } from "@/lib/api";
+import { UserCircle, Save, Eye, EyeOff, CheckCircle, XCircle, Send, Info, ToggleLeft, ToggleRight } from "lucide-react";
+import { getMe, updateProfile, changePassword, getNotificationConfig, updateNotificationConfig, testNotification, NotificationConfig } from "@/lib/api";
 
 export default function ProfilePage() {
   const [user, setUser] = useState<{ email: string; full_name: string; timezone: string } | null>(null);
@@ -15,6 +15,16 @@ export default function ProfilePage() {
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileResult, setProfileResult] = useState<{ ok: boolean; msg: string } | null>(null);
 
+  // Telegram form
+  const [notifConfig, setNotifConfig] = useState<NotificationConfig | null>(null);
+  const [tgToken, setTgToken] = useState("");
+  const [tgChatId, setTgChatId] = useState("");
+  const [tgEnabled, setTgEnabled] = useState(false);
+  const [showTgToken, setShowTgToken] = useState(false);
+  const [tgSaving, setTgSaving] = useState(false);
+  const [tgTesting, setTgTesting] = useState(false);
+  const [tgResult, setTgResult] = useState<{ ok: boolean; msg: string } | null>(null);
+
   // Password form
   const [currentPwd, setCurrentPwd] = useState("");
   const [newPwd, setNewPwd] = useState("");
@@ -25,12 +35,18 @@ export default function ProfilePage() {
   const [pwdResult, setPwdResult] = useState<{ ok: boolean; msg: string } | null>(null);
 
   useEffect(() => {
-    getMe().then((u) => {
-      setUser(u);
-      setFullName(u.full_name);
-      setEmail(u.email);
-      setTimezone(u.timezone);
-    }).finally(() => setLoading(false));
+    Promise.all([getMe(), getNotificationConfig().catch(() => null)])
+      .then(([u, c]) => {
+        setUser(u);
+        setFullName(u.full_name);
+        setEmail(u.email);
+        setTimezone(u.timezone);
+        if (c) {
+          setNotifConfig(c);
+          setTgChatId(c.telegram_chat_id);
+          setTgEnabled(c.telegram_enabled);
+        }
+      }).finally(() => setLoading(false));
   }, []);
 
   async function handleSaveProfile(e: React.FormEvent) {
@@ -127,6 +143,93 @@ export default function ProfilePage() {
             {profileSaving ? "Guardando..." : "Guardar perfil"}
           </button>
         </form>
+      </div>
+
+      {/* Telegram notifications */}
+      <div className="bg-white rounded-xl border p-4 md:p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <svg className="w-5 h-5 text-rohu-accent" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69.01-.03.01-.14-.07-.2-.08-.06-.19-.04-.27-.02-.12.02-1.96 1.25-5.54 3.66-.52.36-1 .53-1.42.52-.47-.01-1.37-.26-2.03-.48-.82-.27-1.47-.42-1.42-.88.03-.24.37-.49 1.02-.75 3.98-1.73 6.64-2.87 7.97-3.43 3.8-1.6 4.59-1.88 5.1-1.89.11 0 .37.03.54.17.14.12.18.28.2.47-.01.06.01.24 0 .38z"/>
+            </svg>
+            <h2 className="font-bold text-lg">Mis notificaciones — Telegram</h2>
+          </div>
+          <button onClick={() => setTgEnabled(!tgEnabled)} className="min-h-[44px] min-w-[44px] flex items-center justify-center">
+            {tgEnabled ? <ToggleRight className="w-8 h-8 text-rohu-secondary" /> : <ToggleLeft className="w-8 h-8 text-rohu-muted" />}
+          </button>
+        </div>
+
+        <div className="p-3 bg-rohu-accent/5 border border-rohu-accent/20 rounded-lg mb-4 text-sm text-rohu-muted">
+          <div className="flex items-start gap-2">
+            <Info className="w-4 h-4 mt-0.5 text-rohu-accent flex-shrink-0" />
+            <div>
+              <p className="font-medium text-rohu-text mb-1">Configura en 3 pasos:</p>
+              <ol className="list-decimal list-inside space-y-1">
+                <li>Abre Telegram → busca <strong>@BotFather</strong> → envia <code className="bg-gray-100 px-1 rounded">/newbot</code> → copia el <strong>token</strong></li>
+                <li>Busca <strong>@userinfobot</strong> → te responde con tu <strong>Chat ID</strong></li>
+                <li>Envia cualquier mensaje a tu bot (para activar la conversacion)</li>
+              </ol>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs font-medium text-rohu-muted mb-1">
+              Bot Token {notifConfig?.telegram_bot_token_set && <span className="text-rohu-secondary">(ya configurado)</span>}
+            </label>
+            <div className="relative">
+              <input type={showTgToken ? "text" : "password"} value={tgToken}
+                onChange={(e) => setTgToken(e.target.value)}
+                placeholder={notifConfig?.telegram_bot_token_set ? "Dejar vacio para mantener" : "123456:ABCdef..."}
+                className={inputClass + " pr-10"} />
+              <button type="button" onClick={() => setShowTgToken(!showTgToken)} className="absolute right-2 top-1/2 -translate-y-1/2 p-1">
+                {showTgToken ? <EyeOff className="w-4 h-4 text-rohu-muted" /> : <Eye className="w-4 h-4 text-rohu-muted" />}
+              </button>
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-rohu-muted mb-1">Chat ID</label>
+            <input type="text" value={tgChatId} onChange={(e) => setTgChatId(e.target.value)}
+              placeholder="123456789" className={inputClass} />
+          </div>
+
+          <div className="flex gap-2 pt-2">
+            <button onClick={async () => {
+              setTgSaving(true); setTgResult(null);
+              try {
+                const shouldEnable = tgEnabled || (!!tgChatId && (!!tgToken || !!notifConfig?.telegram_bot_token_set));
+                const data: Record<string, any> = { telegram_chat_id: tgChatId, telegram_enabled: shouldEnable };
+                if (tgToken) data.telegram_bot_token = tgToken;
+                const updated = await updateNotificationConfig(data);
+                setNotifConfig(updated); setTgEnabled(updated.telegram_enabled); setTgToken("");
+                setTgResult({ ok: true, msg: "Telegram guardado" });
+              } catch (err: any) { setTgResult({ ok: false, msg: err.message }); }
+              setTgSaving(false);
+            }} disabled={tgSaving}
+              className="flex items-center gap-2 px-4 py-2.5 min-h-[44px] bg-rohu-primary text-white text-sm font-medium rounded-lg hover:bg-rohu-primary-dark disabled:opacity-50">
+              <Save className="w-4 h-4" />{tgSaving ? "Guardando..." : "Guardar"}
+            </button>
+            <button onClick={async () => {
+              setTgTesting(true); setTgResult(null);
+              try {
+                const res = await testNotification("telegram");
+                setTgResult({ ok: true, msg: res.message });
+              } catch (err: any) { setTgResult({ ok: false, msg: err.message }); }
+              setTgTesting(false);
+            }} disabled={tgTesting || !notifConfig?.telegram_bot_token_set}
+              className="flex items-center gap-2 px-4 py-2.5 min-h-[44px] border border-rohu-accent text-rohu-accent text-sm font-medium rounded-lg hover:bg-rohu-accent/5 disabled:opacity-50">
+              <Send className="w-4 h-4" />{tgTesting ? "Enviando..." : "Probar"}
+            </button>
+          </div>
+
+          {tgResult && (
+            <div className={`flex items-center gap-2 p-2 rounded-lg text-sm ${tgResult.ok ? "bg-rohu-secondary/10 text-rohu-secondary-dark" : "bg-red-50 text-red-700"}`}>
+              {tgResult.ok ? <CheckCircle className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
+              {tgResult.msg}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Change password */}

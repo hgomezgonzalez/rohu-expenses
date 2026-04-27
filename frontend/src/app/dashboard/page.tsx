@@ -30,6 +30,11 @@ export default function DashboardPage() {
   const [billSearch, setBillSearch] = useState("");
   const [billStatusFilter, setBillStatusFilter] = useState("all");
   const [syncMsg, setSyncMsg] = useState("");
+  const [userName, setUserName] = useState("");
+
+  useEffect(() => {
+    setUserName(localStorage.getItem("user_name") || "");
+  }, []);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -95,7 +100,7 @@ export default function DashboardPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-bold">Dashboard</h1>
+          <h1 className="text-2xl font-bold">{userName ? `Hola, ${userName.split(" ")[0]}` : "Dashboard"}</h1>
           {syncMsg && (
             <span className="text-xs bg-green-100 text-green-700 px-2.5 py-1 rounded-full font-medium animate-pulse">
               {syncMsg}

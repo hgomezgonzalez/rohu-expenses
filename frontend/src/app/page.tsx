@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { Zap, CheckCircle } from "lucide-react";
-import { login, register } from "@/lib/api";
+import { login, register, getMe } from "@/lib/api";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -44,6 +44,10 @@ export default function LoginPage() {
         localStorage.setItem("access_token", result.access_token);
         localStorage.setItem("refresh_token", result.refresh_token);
         localStorage.setItem("user_role", result.role);
+        try {
+          const me = await getMe();
+          localStorage.setItem("user_name", me.full_name);
+        } catch { /* ignore */ }
         router.push("/dashboard");
       }
     } catch (err: any) {
