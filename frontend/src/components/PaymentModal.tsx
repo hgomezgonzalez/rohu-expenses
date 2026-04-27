@@ -44,8 +44,8 @@ export default function PaymentModal({ bill, onClose, onSuccess }: PaymentModalP
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-2xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-black/50 flex items-end md:items-center justify-center z-50 p-0 md:p-4">
+      <div className="bg-white rounded-t-2xl md:rounded-2xl max-w-md w-full max-h-[90vh] overflow-y-auto pb-[env(safe-area-inset-bottom)]">
         <div className="flex items-center justify-between p-4 border-b">
           <h2 className="text-lg font-bold">Registrar pago</h2>
           <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg">

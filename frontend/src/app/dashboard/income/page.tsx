@@ -246,27 +246,27 @@ export default function IncomePage() {
       {tab === "entries" && (
         <>
           {/* Month selector + actions */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
               <button onClick={prevMonth} className="p-2 hover:bg-gray-100 rounded-lg">
                 <ChevronLeft className="w-5 h-5" />
               </button>
-              <h2 className="text-xl font-bold min-w-[160px] text-center">
+              <h2 className="text-xl font-bold">
                 {getMonthName(month)} {year}
               </h2>
               <button onClick={nextMonth} className="p-2 hover:bg-gray-100 rounded-lg">
                 <ChevronRight className="w-5 h-5" />
               </button>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 justify-end">
               <button onClick={handleGenerate} disabled={generating}
                 className="flex items-center gap-1 px-3 py-2 text-sm border border-rohu-primary text-rohu-primary rounded-lg hover:bg-rohu-primary/5 disabled:opacity-50">
                 <RefreshCw className={`w-4 h-4 ${generating ? "animate-spin" : ""}`} />
-                Generar
+                <span className="hidden sm:inline">Generar</span>
               </button>
               <button onClick={() => { setOtName(""); setOtAmount(""); setOtNotes(""); setShowOneTimeForm(true); }}
                 className="flex items-center gap-1 px-3 py-2 text-sm bg-rohu-secondary text-white rounded-lg hover:bg-rohu-secondary-dark">
-                <Plus className="w-4 h-4" /> Puntual
+                <Plus className="w-4 h-4" /> <span className="hidden sm:inline">Puntual</span>
               </button>
             </div>
           </div>
@@ -307,7 +307,7 @@ export default function IncomePage() {
             <div className="space-y-2">
               {entries.map((entry) => (
                 <div key={entry.id}
-                  className={`flex items-center justify-between p-4 rounded-xl border transition-all ${
+                  className={`p-4 rounded-xl border transition-all ${
                     entry.status === "confirmed"
                       ? "bg-green-50 border-green-200"
                       : entry.status === "cancelled"
@@ -315,22 +315,23 @@ export default function IncomePage() {
                         : "bg-white border-gray-200 hover:shadow-sm"
                   }`}
                 >
-                  <div className="flex items-center gap-3">
+                  {/* Row 1: icon + name + badge */}
+                  <div className="flex items-start gap-3">
                     {entry.status === "confirmed" ? (
-                      <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center">
+                      <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
                         <Check className="w-4 h-4 text-green-600" />
                       </div>
                     ) : entry.status === "cancelled" ? (
-                      <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center">
+                      <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center flex-shrink-0">
                         <Ban className="w-4 h-4 text-gray-400" />
                       </div>
                     ) : (
-                      <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
+                      <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
                         <Clock className="w-4 h-4 text-blue-500" />
                       </div>
                     )}
-                    <div>
-                      <p className="font-semibold flex items-center gap-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold flex items-center gap-2 flex-wrap">
                         {entry.name}
                         {entry.is_one_time && (
                           <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-medium">PUNTUAL</span>
@@ -343,38 +344,36 @@ export default function IncomePage() {
                             ? "Cancelado"
                             : `Esperado: ${formatCurrency(entry.expected_amount)}`
                         }
-                        {entry.status === "confirmed" && entry.actual_amount !== entry.expected_amount && (
-                          <span className={`ml-1 ${(entry.actual_amount || 0) > entry.expected_amount ? "text-green-600" : "text-red-500"}`}>
-                            ({(entry.actual_amount || 0) > entry.expected_amount ? "+" : ""}{formatCurrency((entry.actual_amount || 0) - entry.expected_amount)} vs esperado)
-                          </span>
-                        )}
                       </p>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  {/* Row 2: amount + actions */}
+                  <div className="flex items-center justify-between mt-2 pl-11">
                     <span className={`font-bold text-lg ${
                       entry.status === "confirmed" ? "text-green-600" : entry.status === "cancelled" ? "text-gray-400 line-through" : "text-rohu-secondary"
                     }`}>
                       {formatCurrency(entry.effective_amount)}
                     </span>
 
-                    {entry.status === "expected" && (
-                      <>
-                        <button onClick={() => startConfirm(entry)}
-                          className="px-3 py-1.5 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium">
-                          Confirmar
-                        </button>
-                        <button onClick={() => handleCancelEntry(entry.id)}
-                          className="p-1.5 hover:bg-gray-100 rounded-lg" title="Cancelar">
-                          <Ban className="w-3.5 h-3.5 text-gray-400" />
-                        </button>
-                      </>
-                    )}
-                    <button onClick={() => setDeleteEntryId(entry.id)}
-                      className="p-1.5 hover:bg-red-50 rounded-lg" title="Eliminar">
-                      <Trash2 className="w-3.5 h-3.5 text-red-400" />
-                    </button>
+                    <div className="flex items-center gap-1">
+                      {entry.status === "expected" && (
+                        <>
+                          <button onClick={() => startConfirm(entry)}
+                            className="px-3 py-1.5 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium min-h-[36px]">
+                            Confirmar
+                          </button>
+                          <button onClick={() => handleCancelEntry(entry.id)}
+                            className="p-1.5 hover:bg-gray-100 rounded-lg min-h-[36px] min-w-[36px] flex items-center justify-center" title="Cancelar">
+                            <Ban className="w-3.5 h-3.5 text-gray-400" />
+                          </button>
+                        </>
+                      )}
+                      <button onClick={() => setDeleteEntryId(entry.id)}
+                        className="p-1.5 hover:bg-red-50 rounded-lg min-h-[36px] min-w-[36px] flex items-center justify-center" title="Eliminar">
+                        <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}
