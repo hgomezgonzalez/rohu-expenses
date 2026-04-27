@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
+import BiometricPromptBanner from "@/components/BiometricPromptBanner";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -29,6 +30,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <Sidebar />
       {/* Main content - offset for sidebar on desktop, bottom padding for mobile nav */}
       <main className="md:ml-56 pb-20 md:pb-0 min-h-screen">
+        <BiometricPromptBanner />
         {children}
       </main>
     </div>

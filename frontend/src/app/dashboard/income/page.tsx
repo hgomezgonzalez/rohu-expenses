@@ -5,8 +5,8 @@ import { Plus, X, Edit2, Trash2, Check, Clock, ChevronLeft, ChevronRight, Ban, R
 import {
   getIncomeSources, createIncomeSource, updateIncomeSource, deleteIncomeSource,
   getIncomeEntries, generateIncomeEntries, confirmIncomeEntry, createIncomeEntry,
-  deleteIncomeEntry, updateIncomeEntry,
-  IncomeSource, IncomeSourceCreate, IncomeEntry, IncomeEntryConfirm,
+  deleteIncomeEntry, updateIncomeEntry, getPayCycle, INCOME_CHANGED_EVENT,
+  IncomeSource, IncomeSourceCreate, IncomeEntry, IncomeEntryConfirm, PayCycleResponse,
 } from "@/lib/api";
 import { formatCurrency, getMonthName } from "@/lib/utils";
 import ConfirmModal from "@/components/ConfirmModal";
@@ -29,10 +29,14 @@ export default function IncomePage() {
   const [sourceError, setSourceError] = useState("");
   const [deleteSourceId, setDeleteSourceId] = useState<string | null>(null);
 
-  // Entries state
+  // Entries state — month mode (when no cycle is configured) and cycle mode
   const now = new Date();
+  const todayIso = now.toISOString().slice(0, 10);
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
+  const [cycle, setCycle] = useState<PayCycleResponse | null>(null);
+  const [cycleRef, setCycleRef] = useState<string>(todayIso);
+  const isCycleMode = !!cycle?.configured;
   const [entries, setEntries] = useState<IncomeEntry[]>([]);
   const [loadingEntries, setLoadingEntries] = useState(true);
   const [generating, setGenerating] = useState(false);
@@ -64,34 +68,75 @@ export default function IncomePage() {
     setLoadingSources(false);
   }, []);
 
-  // Load entries
+  // Load entries (cycle mode if pay cycle is configured, calendar month otherwise)
   const loadEntries = useCallback(async () => {
     setLoadingEntries(true);
     try {
-      const data = await getIncomeEntries(year, month);
+      const data = isCycleMode
+        ? await getIncomeEntries(undefined, undefined, { mode: "cycle", refDate: cycleRef })
+        : await getIncomeEntries(year, month);
       setEntries(data);
     } catch { /* ignore */ }
     setLoadingEntries(false);
-  }, [year, month]);
+  }, [year, month, isCycleMode, cycleRef]);
 
   useEffect(() => { loadSources(); }, [loadSources]);
   useEffect(() => { loadEntries(); }, [loadEntries]);
 
-  // Month navigation
-  function prevMonth() {
-    if (month === 1) { setYear(year - 1); setMonth(12); }
-    else setMonth(month - 1);
+  // Load pay cycle config once on mount; updates trigger isCycleMode + reload
+  useEffect(() => {
+    getPayCycle(todayIso).then(setCycle).catch(() => {});
+  }, [todayIso]);
+
+  // Refetch when tab regains focus (covers "I edited in another tab/page and came back")
+  useEffect(() => {
+    function onVisible() {
+      if (document.visibilityState === "visible") {
+        loadEntries();
+      }
+    }
+    function onIncomeChanged() { loadEntries(); }
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener(INCOME_CHANGED_EVENT, onIncomeChanged);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener(INCOME_CHANGED_EVENT, onIncomeChanged);
+    };
+  }, [loadEntries]);
+
+  // Month / cycle navigation
+  function prevPeriod() {
+    if (isCycleMode) {
+      getPayCycle(cycleRef, -1).then((c) => {
+        setCycle(c);
+        if (c?.start_date) setCycleRef(c.start_date);
+      });
+    } else {
+      if (month === 1) { setYear(year - 1); setMonth(12); }
+      else setMonth(month - 1);
+    }
   }
-  function nextMonth() {
-    if (month === 12) { setYear(year + 1); setMonth(1); }
-    else setMonth(month + 1);
+  function nextPeriod() {
+    if (isCycleMode) {
+      getPayCycle(cycleRef, 1).then((c) => {
+        setCycle(c);
+        if (c?.start_date) setCycleRef(c.start_date);
+      });
+    } else {
+      if (month === 12) { setYear(year + 1); setMonth(1); }
+      else setMonth(month + 1);
+    }
   }
 
   // Generate entries
   async function handleGenerate() {
     setGenerating(true);
     try {
-      await generateIncomeEntries(year, month);
+      if (isCycleMode) {
+        await generateIncomeEntries(undefined, undefined, { mode: "cycle", refDate: cycleRef });
+      } else {
+        await generateIncomeEntries(year, month);
+      }
       await loadEntries();
     } catch { /* ignore */ }
     setGenerating(false);
@@ -175,11 +220,20 @@ export default function IncomePage() {
     e.preventDefault();
     setSavingOneTime(true);
     try {
+      // In cycle mode, anchor the one-time entry to the cycle's end month so
+      // its computed entry_date (day=1 of that month) falls inside the cycle.
+      let targetYear = year;
+      let targetMonth = month;
+      if (isCycleMode && cycle?.end_date) {
+        const [y, m] = cycle.end_date.split("-");
+        targetYear = parseInt(y);
+        targetMonth = parseInt(m);
+      }
       await createIncomeEntry({
         name: otName,
         expected_amount: parseFloat(otAmount),
-        year,
-        month,
+        year: targetYear,
+        month: targetMonth,
         notes: otNotes || undefined,
       });
       setShowOneTimeForm(false);
@@ -245,16 +299,16 @@ export default function IncomePage() {
       {/* ==================== ENTRIES TAB ==================== */}
       {tab === "entries" && (
         <>
-          {/* Month selector + actions */}
+          {/* Period selector + actions */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <button onClick={prevMonth} className="p-2 hover:bg-gray-100 rounded-lg">
+              <button onClick={prevPeriod} className="p-2 hover:bg-gray-100 rounded-lg" aria-label="Periodo anterior">
                 <ChevronLeft className="w-5 h-5" />
               </button>
-              <h2 className="text-xl font-bold">
-                {getMonthName(month)} {year}
+              <h2 className="text-xl font-bold text-center">
+                {isCycleMode && cycle?.label ? cycle.label : `${getMonthName(month)} ${year}`}
               </h2>
-              <button onClick={nextMonth} className="p-2 hover:bg-gray-100 rounded-lg">
+              <button onClick={nextPeriod} className="p-2 hover:bg-gray-100 rounded-lg" aria-label="Periodo siguiente">
                 <ChevronRight className="w-5 h-5" />
               </button>
             </div>

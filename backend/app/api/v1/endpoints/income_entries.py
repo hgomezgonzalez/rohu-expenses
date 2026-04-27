@@ -1,4 +1,5 @@
 import uuid
+from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,7 +16,9 @@ from app.schemas.income_entry import (
 )
 from app.services.income_service import (
     generate_income_entries,
+    generate_income_entries_for_cycle,
     get_income_entries,
+    get_income_entries_by_cycle,
     create_one_time_entry,
     confirm_income_entry,
     update_income_entry,
@@ -25,15 +28,36 @@ from app.services.income_service import (
 router = APIRouter(prefix="/income-entries", tags=["income-entries"])
 
 
+def _parse_ref_date(ref_date: str | None) -> date:
+    if not ref_date:
+        return date.today()
+    try:
+        return date.fromisoformat(ref_date)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="ref_date debe ser YYYY-MM-DD")
+
+
 @router.post("/generate", response_model=IncomeGenerateResult)
 async def generate_entries(
-    year: int = Query(ge=2020, le=2100),
-    month: int = Query(ge=1, le=12),
+    year: int | None = Query(default=None, ge=2020, le=2100),
+    month: int | None = Query(default=None, ge=1, le=12),
+    mode: str | None = Query(default=None, pattern="^(month|cycle)$"),
+    ref_date: str | None = Query(default=None),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Generate income entries from active income source templates. Idempotent."""
-    result = await generate_income_entries(db, user.id, year, month)
+    """Generate income entries from active income source templates. Idempotent.
+
+    Two modes:
+    - month (default): generate for a specific year/month.
+    - cycle: generate for every calendar month touched by the user's pay cycle.
+    """
+    if mode == "cycle":
+        result = await generate_income_entries_for_cycle(db, user.id, _parse_ref_date(ref_date))
+    else:
+        if year is None or month is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="year/month requeridos en modo month")
+        result = await generate_income_entries(db, user.id, year, month)
     return IncomeGenerateResult(
         generated=result["generated"],
         skipped=result["skipped"],
@@ -43,12 +67,26 @@ async def generate_entries(
 
 @router.get("", response_model=list[IncomeEntryResponse])
 async def list_entries(
-    year: int = Query(ge=2020, le=2100),
-    month: int = Query(ge=1, le=12),
+    year: int | None = Query(default=None, ge=2020, le=2100),
+    month: int | None = Query(default=None, ge=1, le=12),
+    mode: str | None = Query(default=None, pattern="^(month|cycle)$"),
+    ref_date: str | None = Query(default=None),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    entries = await get_income_entries(db, user.id, year, month)
+    """List income entries.
+
+    - month (default, requires year/month): entries with that calendar year+month.
+    - cycle (requires ref_date or uses today): entries whose entry_date falls
+      within the user's pay cycle window. Falls back to month if no cycle
+      is configured. Auto-generates missing entries before reading.
+    """
+    if mode == "cycle":
+        entries = await get_income_entries_by_cycle(db, user.id, _parse_ref_date(ref_date))
+    else:
+        if year is None or month is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="year/month requeridos en modo month")
+        entries = await get_income_entries(db, user.id, year, month)
     return entries
 
 

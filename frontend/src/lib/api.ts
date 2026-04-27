@@ -41,10 +41,15 @@ export async function login(email: string, password: string) {
   });
 }
 
-export async function register(email: string, password: string, fullName: string) {
+export async function register(email: string, password: string, fullName: string, whatsapp?: string) {
   return request<{ message: string; pending_approval: boolean }>("/auth/register", {
     method: "POST",
-    body: JSON.stringify({ email, password, full_name: fullName }),
+    body: JSON.stringify({
+      email,
+      password,
+      full_name: fullName,
+      whatsapp: whatsapp ? whatsapp.trim() : undefined,
+    }),
   });
 }
 
@@ -216,7 +221,7 @@ export async function fetchAttachmentBlob(paymentId: string, attachmentId: strin
 }
 
 // Profile
-export async function updateProfile(data: { email?: string; full_name?: string; timezone?: string }) {
+export async function updateProfile(data: { email?: string; full_name?: string; whatsapp?: string; timezone?: string }) {
   return request<any>("/users/me", { method: "PATCH", body: JSON.stringify(data) });
 }
 
@@ -230,7 +235,7 @@ export async function listUsers(search?: string) {
   return request<UserFull[]>(`/users${params}`);
 }
 
-export async function adminCreateUser(data: { email: string; password: string; full_name: string; role?: string }) {
+export async function adminCreateUser(data: { email: string; password: string; full_name: string; whatsapp?: string; role?: string }) {
   return request<any>("/users", { method: "POST", body: JSON.stringify(data) });
 }
 
@@ -262,40 +267,77 @@ export async function deleteIncomeSource(id: string) {
 }
 
 // Income Entries (monthly instances)
-export async function generateIncomeEntries(year: number, month: number) {
+export interface IncomeListParams {
+  mode?: "month" | "cycle";
+  refDate?: string; // YYYY-MM-DD, used when mode === "cycle"
+}
+
+function buildIncomeQuery(year: number | undefined, month: number | undefined, params?: IncomeListParams): string {
+  const qs = new URLSearchParams();
+  if (params?.mode) qs.set("mode", params.mode);
+  if (params?.refDate) qs.set("ref_date", params.refDate);
+  if (params?.mode !== "cycle") {
+    if (year !== undefined) qs.set("year", String(year));
+    if (month !== undefined) qs.set("month", String(month));
+  }
+  return qs.toString();
+}
+
+export async function generateIncomeEntries(
+  year?: number, month?: number, params?: IncomeListParams
+) {
   return request<IncomeGenerateResult>(
-    `/income-entries/generate?year=${year}&month=${month}`,
+    `/income-entries/generate?${buildIncomeQuery(year, month, params)}`,
     { method: "POST" }
   );
 }
 
-export async function getIncomeEntries(year: number, month: number) {
-  return request<IncomeEntry[]>(`/income-entries?year=${year}&month=${month}`);
+export async function getIncomeEntries(
+  year?: number, month?: number, params?: IncomeListParams
+) {
+  return request<IncomeEntry[]>(`/income-entries?${buildIncomeQuery(year, month, params)}`);
+}
+
+// Custom event broadcast when an income entry mutates so other open
+// pages (e.g. dashboard) can refetch immediately without a full reload.
+export const INCOME_CHANGED_EVENT = "paycontrol:income-changed";
+function broadcastIncomeChanged() {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent(INCOME_CHANGED_EVENT));
+  }
 }
 
 export async function createIncomeEntry(data: IncomeEntryCreate) {
-  return request<IncomeEntry>("/income-entries", {
+  const result = await request<IncomeEntry>("/income-entries", {
     method: "POST",
     body: JSON.stringify(data),
   });
+  broadcastIncomeChanged();
+  return result;
 }
 
 export async function confirmIncomeEntry(id: string, data: IncomeEntryConfirm) {
-  return request<IncomeEntry>(`/income-entries/${id}/confirm`, {
+  const result = await request<IncomeEntry>(`/income-entries/${id}/confirm`, {
     method: "PATCH",
     body: JSON.stringify(data),
   });
+  broadcastIncomeChanged();
+  return result;
 }
 
 export async function updateIncomeEntry(id: string, data: Partial<{ actual_amount: number; status: string; notes: string }>) {
-  return request<IncomeEntry>(`/income-entries/${id}`, {
+  const result = await request<IncomeEntry>(`/income-entries/${id}`, {
     method: "PATCH",
     body: JSON.stringify(data),
   });
+  broadcastIncomeChanged();
+  return result;
 }
 
 export async function deleteIncomeEntry(id: string) {
-  return request<void>(`/income-entries/${id}`, { method: "DELETE" });
+  const result = await request<void>(`/income-entries/${id}`, { method: "DELETE" });
+  broadcastIncomeChanged();
+  return result;
 }
 
 // Bill Template update
@@ -308,7 +350,7 @@ export async function updateBillTemplate(id: string, data: Partial<BillTemplateC
 
 // User
 export async function getMe() {
-  return request<{ id: string; email: string; full_name: string; timezone: string }>("/auth/me");
+  return request<{ id: string; email: string; full_name: string; whatsapp: string | null; timezone: string }>("/auth/me");
 }
 
 // Types
@@ -501,11 +543,18 @@ export interface UserFull {
   id: string;
   email: string;
   full_name: string;
+  whatsapp: string | null;
   role: string;
   is_active: boolean;
   last_login: string | null;
   created_at: string;
   bill_count: number;
+}
+
+export function buildWhatsAppLink(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const digits = value.replace(/\D/g, "");
+  return digits.length >= 7 ? `https://wa.me/${digits}` : null;
 }
 
 export interface NotificationConfig {

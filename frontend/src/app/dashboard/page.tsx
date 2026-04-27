@@ -6,7 +6,7 @@ import Link from "next/link";
 import { ChevronLeft, ChevronRight, RefreshCw, FileText, Search } from "lucide-react";
 import {
   getDashboardFull, getDashboardByCycle, generateBillInstances,
-  getPayCycle, PayCycleResponse,
+  getPayCycle, PayCycleResponse, INCOME_CHANGED_EVENT,
   DashboardSummary, CashflowForecast, BillInstance,
 } from "@/lib/api";
 import { getMonthName } from "@/lib/utils";
@@ -79,6 +79,20 @@ export default function DashboardPage() {
   }, [year, month, router, isCycleMode, cycleRef]);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  // Refetch when tab regains focus or another page mutated income entries.
+  useEffect(() => {
+    function onVisible() {
+      if (document.visibilityState === "visible") loadData();
+    }
+    function onIncomeChanged() { loadData(); }
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener(INCOME_CHANGED_EVENT, onIncomeChanged);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener(INCOME_CHANGED_EVENT, onIncomeChanged);
+    };
+  }, [loadData]);
 
   function changeMonth(delta: number) {
     if (isCycleMode) {

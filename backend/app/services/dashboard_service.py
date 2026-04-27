@@ -1,3 +1,4 @@
+import logging
 import uuid
 from datetime import date
 from decimal import Decimal
@@ -23,6 +24,9 @@ from app.schemas.dashboard import (
 )
 from app.schemas.bill import BillInstanceResponse, CategoryResponse
 from app.schemas.income_entry import IncomeEntryResponse
+from app.services.income_service import generate_income_entries
+
+logger = logging.getLogger(__name__)
 
 
 async def _get_monthly_income(
@@ -452,6 +456,15 @@ async def get_full_dashboard_by_cycle(
     all_income_entries = []
 
     for y, m in sorted(months_in_cycle):
+        # Auto-generate missing entries first (idempotent — only creates ones
+        # that don't yet exist) so the cycle view is the same source of truth
+        # used by /income. Wrapped defensively: if generation fails, we still
+        # try to read whatever is in DB and the template fallback below kicks in.
+        try:
+            await generate_income_entries(db, user_id, y, m)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("Auto-generate income entries failed (cycle dashboard): %s", exc)
+
         # Get entries for this month
         result_inc = await db.execute(
             select(IncomeEntry).where(

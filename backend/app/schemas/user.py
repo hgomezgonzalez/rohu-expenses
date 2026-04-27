@@ -13,6 +13,7 @@ class UserResponse(BaseModel):
     id: uuid.UUID
     email: str
     full_name: str
+    whatsapp: str | None = None
     timezone: str
     role: str
     is_active: bool
@@ -33,6 +34,7 @@ class TokenResponse(BaseModel):
 class UserProfileUpdate(BaseModel):
     email: str | None = Field(None, max_length=255)
     full_name: str | None = Field(None, max_length=255)
+    whatsapp: str | None = Field(None, max_length=30)
     timezone: str | None = Field(None, max_length=50)
 
 
@@ -46,6 +48,7 @@ class AdminUserCreate(BaseModel):
     email: str = Field(max_length=255)
     password: str = Field(min_length=6)
     full_name: str = Field(max_length=255)
+    whatsapp: str | None = Field(None, max_length=30)
     timezone: str = "America/Bogota"
     role: str = "user"
 
@@ -59,6 +62,7 @@ class UserListItem(BaseModel):
     id: uuid.UUID
     email: str
     full_name: str
+    whatsapp: str | None = None
     role: str
     is_active: bool
     last_login: datetime | None = None

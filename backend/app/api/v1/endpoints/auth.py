@@ -33,11 +33,20 @@ class RegisterRequest(BaseModel):
     email: str = Field(max_length=255)
     password: str = Field(min_length=6)
     full_name: str = Field(max_length=255)
+    whatsapp: str | None = Field(None, max_length=30)
 
 
 class RegisterResponse(BaseModel):
     message: str
     pending_approval: bool = True
+
+
+def _wa_me_link(raw: str | None) -> str | None:
+    """Build a https://wa.me/<digits> link from a raw whatsapp value."""
+    if not raw:
+        return None
+    digits = "".join(ch for ch in raw if ch.isdigit())
+    return f"https://wa.me/{digits}" if len(digits) >= 7 else None
 
 
 @router.post("/register", response_model=RegisterResponse, status_code=status.HTTP_201_CREATED)
@@ -48,10 +57,14 @@ async def register(data: RegisterRequest, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
 
     # Create user as INACTIVE (pending admin approval)
+    whatsapp_clean = data.whatsapp.strip() if data.whatsapp else None
+    if whatsapp_clean == "":
+        whatsapp_clean = None
     user = User(
         email=data.email,
         hashed_password=hash_password(data.password),
         full_name=data.full_name,
+        whatsapp=whatsapp_clean,
         role="user",
         is_active=False,
     )
@@ -62,16 +75,31 @@ async def register(data: RegisterRequest, db: AsyncSession = Depends(get_db)):
     admin_result = await db.execute(select(User).where(User.role == "admin", User.is_active == True))
     admins = admin_result.scalars().all()
 
+    wa_link = _wa_me_link(whatsapp_clean)
+    whatsapp_line_tg = ""
+    if whatsapp_clean:
+        if wa_link:
+            whatsapp_line_tg = f'\n📱 WhatsApp: <a href="{wa_link}">{whatsapp_clean}</a>'
+        else:
+            whatsapp_line_tg = f"\n📱 WhatsApp: {whatsapp_clean}"
+
     telegram_msg = (
         f"🆕 <b>Nuevo usuario registrado</b>\n\n"
         f"👤 <b>{data.full_name}</b>\n"
-        f"📧 {data.email}\n\n"
+        f"📧 {data.email}"
+        f"{whatsapp_line_tg}\n\n"
         f"Actívalo desde el panel de Usuarios en PayControl."
     )
     email_subject = f"🆕 Nuevo usuario: {data.full_name} ({data.email})"
+    email_contact_line = (
+        f"{data.email}"
+        if not whatsapp_clean
+        else f"{data.email} · WhatsApp: {whatsapp_clean}"
+        + (f' (<a href="{wa_link}">contactar</a>)' if wa_link else "")
+    )
     email_body = build_reminder_email(
         f"Nuevo usuario: {data.full_name}",
-        data.email,
+        email_contact_line,
         "Pendiente de aprobación",
         "Nuevo registro en PayControl",
     )

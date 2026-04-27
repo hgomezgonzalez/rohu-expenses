@@ -88,6 +88,7 @@ async def list_users(
             id=row.User.id,
             email=row.User.email,
             full_name=row.User.full_name,
+            whatsapp=row.User.whatsapp,
             role=row.User.role,
             is_active=row.User.is_active,
             last_login=row.User.last_login,
@@ -112,6 +113,7 @@ async def admin_create_user(
         email=data.email,
         hashed_password=hash_password(data.password),
         full_name=data.full_name,
+        whatsapp=data.whatsapp,
         timezone=data.timezone,
         role="user",  # Always create as regular user, admin can promote later
         is_active=True,  # Admin-created users are active immediately

@@ -18,6 +18,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
+  const [whatsapp, setWhatsapp] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
@@ -72,10 +73,10 @@ export default function LoginPage() {
 
     try {
       if (isRegister) {
-        const result = await register(email, password, fullName);
+        const result = await register(email, password, fullName, whatsapp);
         setSuccess(result.message);
         setIsRegister(false);
-        setEmail(""); setPassword(""); setFullName("");
+        setEmail(""); setPassword(""); setFullName(""); setWhatsapp("");
       } else {
         const result = await login(email, password);
         localStorage.setItem("access_token", result.access_token);
@@ -144,11 +145,20 @@ export default function LoginPage() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             {isRegister && (
-              <div>
-                <label className="block text-sm font-medium mb-1">Nombre completo</label>
-                <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)}
-                  className={inputClass} placeholder="Tu nombre" required />
-              </div>
+              <>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Nombre completo</label>
+                  <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)}
+                    className={inputClass} placeholder="Tu nombre" required />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">
+                    WhatsApp <span className="text-rohu-muted text-xs font-normal">(opcional, para que el admin pueda contactarte)</span>
+                  </label>
+                  <input type="tel" value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)}
+                    className={inputClass} placeholder="+57 300 123 4567" inputMode="tel" />
+                </div>
+              </>
             )}
             <div>
               <label className="block text-sm font-medium mb-1">Email</label>

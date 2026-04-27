@@ -13,12 +13,13 @@ import {
 } from "@/lib/webauthn";
 
 export default function ProfilePage() {
-  const [user, setUser] = useState<{ email: string; full_name: string; timezone: string } | null>(null);
+  const [user, setUser] = useState<{ email: string; full_name: string; whatsapp: string | null; timezone: string } | null>(null);
   const [loading, setLoading] = useState(true);
 
   // Profile form
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
+  const [whatsapp, setWhatsapp] = useState("");
   const [timezone, setTimezone] = useState("");
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileResult, setProfileResult] = useState<{ ok: boolean; msg: string } | null>(null);
@@ -59,6 +60,7 @@ export default function ProfilePage() {
         setUser(u);
         setFullName(u.full_name);
         setEmail(u.email);
+        setWhatsapp(u.whatsapp || "");
         setTimezone(u.timezone);
         if (c) {
           setNotifConfig(c);
@@ -124,7 +126,7 @@ export default function ProfilePage() {
     setProfileSaving(true);
     setProfileResult(null);
     try {
-      await updateProfile({ full_name: fullName, email, timezone });
+      await updateProfile({ full_name: fullName, email, whatsapp: whatsapp.trim(), timezone });
       setProfileResult({ ok: true, msg: "Perfil actualizado" });
     } catch (err: any) {
       setProfileResult({ ok: false, msg: err.message || "Error al guardar" });
@@ -186,6 +188,13 @@ export default function ProfilePage() {
             <label className="block text-xs font-medium text-rohu-muted mb-1">Email</label>
             <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
               className={inputClass} required />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-rohu-muted mb-1">
+              WhatsApp <span className="text-rohu-muted text-xs">(opcional)</span>
+            </label>
+            <input type="tel" value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)}
+              className={inputClass} placeholder="+57 300 123 4567" inputMode="tel" />
           </div>
           <div>
             <label className="block text-xs font-medium text-rohu-muted mb-1">Zona horaria</label>

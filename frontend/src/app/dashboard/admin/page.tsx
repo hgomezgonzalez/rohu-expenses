@@ -3,9 +3,9 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Plus, X, Search, ToggleLeft, ToggleRight, Shield, UserIcon, Trash2, Database,
+  Plus, X, Search, ToggleLeft, ToggleRight, Shield, UserIcon, Trash2, Database, MessageCircle,
 } from "lucide-react";
-import { listUsers, adminCreateUser, adminUpdateUser, deleteUser, UserFull } from "@/lib/api";
+import { listUsers, adminCreateUser, adminUpdateUser, deleteUser, buildWhatsAppLink, UserFull } from "@/lib/api";
 import ConfirmModal from "@/components/ConfirmModal";
 
 export default function AdminPage() {
@@ -19,6 +19,7 @@ export default function AdminPage() {
   const [newEmail, setNewEmail] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [newName, setNewName] = useState("");
+  const [newWhatsapp, setNewWhatsapp] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -54,10 +55,13 @@ export default function AdminPage() {
     setError("");
     setSuccess("");
     try {
-      await adminCreateUser({ email: newEmail, password: newPassword, full_name: newName });
+      await adminCreateUser({
+        email: newEmail, password: newPassword, full_name: newName,
+        whatsapp: newWhatsapp.trim() || undefined,
+      });
       setSuccess(`Usuario ${newEmail} creado exitosamente`);
       setShowForm(false);
-      setNewEmail(""); setNewPassword(""); setNewName("");
+      setNewEmail(""); setNewPassword(""); setNewName(""); setNewWhatsapp("");
       await loadData();
     } catch (err: any) {
       setError(err.message);
@@ -160,6 +164,14 @@ export default function AdminPage() {
                 <input type="text" value={newPassword} onChange={(e) => setNewPassword(e.target.value)}
                   placeholder="Mínimo 6 caracteres" className="w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-rohu-accent" required minLength={6} />
               </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  WhatsApp <span className="text-rohu-muted text-xs font-normal">(opcional)</span>
+                </label>
+                <input type="tel" value={newWhatsapp} onChange={(e) => setNewWhatsapp(e.target.value)}
+                  placeholder="+57 300 123 4567" inputMode="tel"
+                  className="w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-rohu-accent" />
+              </div>
 
               <div className="p-3 bg-rohu-accent/5 rounded-lg text-sm text-rohu-muted">
                 El usuario recibirá estas credenciales para acceder. Puedes desactivarlo en cualquier momento.
@@ -194,6 +206,19 @@ export default function AdminPage() {
                   )}
                 </div>
                 <p className="text-sm text-rohu-muted truncate">{u.email}</p>
+                {u.whatsapp && (() => {
+                  const link = buildWhatsAppLink(u.whatsapp);
+                  return link ? (
+                    <a href={link} target="_blank" rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-xs text-green-700 hover:text-green-800 hover:underline mt-0.5">
+                      <MessageCircle className="w-3 h-3" /> {u.whatsapp}
+                    </a>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-xs text-rohu-muted mt-0.5">
+                      <MessageCircle className="w-3 h-3" /> {u.whatsapp}
+                    </span>
+                  );
+                })()}
                 <div className="flex items-center gap-3 text-xs text-rohu-muted mt-1">
                   <span>{u.bill_count} plantillas</span>
                   <span>Creado: {new Date(u.created_at).toLocaleDateString("es-CO")}</span>
