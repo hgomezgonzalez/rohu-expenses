@@ -78,76 +78,51 @@ async def seed_personal_data():
                     await session.flush()
                 print(f"  Admin user exists (prod): {user.email} (no password change)")
 
-        # Load categories map
-        cats_result = await session.execute(select(Category))
-        cats = {c.slug: c.id for c in cats_result.scalars().all()}
+        # Check if this is a fresh install (no templates exist for this user)
+        existing_templates = await session.execute(
+            select(BillTemplate).where(BillTemplate.user_id == user.id).limit(1)
+        )
+        is_fresh = not existing_templates.scalars().first()
 
-        # Create bill templates
-        created_templates = 0
-        for tmpl in PERSONAL_BILL_TEMPLATES:
-            existing = await session.execute(
-                select(BillTemplate).where(
-                    BillTemplate.user_id == user.id,
-                    BillTemplate.name == tmpl["name"],
+        if is_fresh:
+            # First-time setup only — seed personal data
+            cats_result = await session.execute(select(Category))
+            cats = {c.slug: c.id for c in cats_result.scalars().all()}
+
+            created_templates = 0
+            for tmpl in PERSONAL_BILL_TEMPLATES:
+                category_id = cats.get(tmpl["category_slug"])
+                if not category_id:
+                    continue
+                template = BillTemplate(
+                    user_id=user.id,
+                    category_id=category_id,
+                    name=tmpl["name"],
+                    provider=tmpl.get("provider"),
+                    estimated_amount=Decimal(str(tmpl["estimated_amount"])),
+                    due_day_of_month=tmpl["due_day"],
+                    recurrence_type=RecurrenceType.MONTHLY,
+                    notes=tmpl.get("notes"),
                 )
-            )
-            if existing.scalars().first():
-                continue
+                session.add(template)
+                created_templates += 1
+            print(f"  Created {created_templates} bill templates (first-time setup)")
 
-            category_id = cats.get(tmpl["category_slug"])
-            if not category_id:
-                print(f"  WARNING: category '{tmpl['category_slug']}' not found, skipping {tmpl['name']}")
-                continue
-
-            template = BillTemplate(
-                user_id=user.id,
-                category_id=category_id,
-                name=tmpl["name"],
-                provider=tmpl.get("provider"),
-                estimated_amount=Decimal(str(tmpl["estimated_amount"])),
-                due_day_of_month=tmpl["due_day"],
-                recurrence_type=RecurrenceType.MONTHLY,
-                notes=tmpl.get("notes"),
-            )
-            session.add(template)
-            created_templates += 1
-
-        print(f"  Created {created_templates} bill templates")
-
-        # Create income sources
-        created_income = 0
-        for inc in PERSONAL_INCOME_SOURCES:
-            existing = await session.execute(
-                select(IncomeSource).where(
-                    IncomeSource.user_id == user.id,
-                    IncomeSource.name == inc["name"],
+            created_income = 0
+            for inc in PERSONAL_INCOME_SOURCES:
+                source = IncomeSource(
+                    user_id=user.id,
+                    name=inc["name"],
+                    amount=Decimal(str(inc["amount"])),
+                    day_of_month=inc["day_of_month"],
                 )
-            )
-            if existing.scalars().first():
-                continue
+                session.add(source)
+                created_income += 1
+            print(f"  Created {created_income} income sources (first-time setup)")
+        else:
+            print("  Skipping personal data seed (user already has templates)")
 
-            source = IncomeSource(
-                user_id=user.id,
-                name=inc["name"],
-                amount=Decimal(str(inc["amount"])),
-                day_of_month=inc["day_of_month"],
-            )
-            session.add(source)
-            created_income += 1
-
-        print(f"  Created {created_income} income sources")
         await session.commit()
-
-        # Generate bill instances and income entries for current month
-        from app.services.bill_service import generate_monthly_bills
-        from app.services.income_service import generate_income_entries
-        today = date.today()
-        async with async_session_factory() as session2:
-            bill_result = await generate_monthly_bills(session2, user.id, today.year, today.month)
-            income_result = await generate_income_entries(session2, user.id, today.year, today.month)
-            await session2.commit()
-            print(f"  Generated {len(bill_result['created'])} bill instances, synced {bill_result['synced']} for {today.year}-{today.month:02d}")
-            print(f"  Generated {income_result['generated']} income entries for {today.year}-{today.month:02d}")
 
 
 async def main():
