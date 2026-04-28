@@ -27,6 +27,7 @@ async def create_bill_template(
         provider=data.provider,
         estimated_amount=data.estimated_amount,
         due_day_of_month=data.due_day_of_month,
+        due_month_of_year=data.due_month_of_year,
         recurrence_type=data.recurrence_type,
         notes=data.notes,
     )
@@ -79,6 +80,8 @@ async def update_bill_template(
     old_amount = template.estimated_amount if "estimated_amount" in update_data else None
     old_name = template.name if "name" in update_data else None
     old_due_day = template.due_day_of_month if "due_day_of_month" in update_data else None
+    old_anchor = template.due_month_of_year if "due_month_of_year" in update_data else None
+    anchor_changed_to_set = "due_month_of_year" in update_data and update_data["due_month_of_year"] != old_anchor
 
     for key, value in update_data.items():
         setattr(template, key, value)
@@ -89,6 +92,24 @@ async def update_bill_template(
         await propagate_template_changes_to_instances(
             db, template, old_amount, old_name, old_due_day
         )
+
+    # When the anchor month changes (or is reactivated), regenerate any missing
+    # instance for the look-ahead window so the new schedule appears immediately
+    # in the dashboard. Idempotent: skips if instance already exists.
+    if anchor_changed_to_set or update_data.get("is_active") is True:
+        from datetime import timedelta
+        today = datetime.now(ZoneInfo("America/Bogota")).date()
+        last_date = today + timedelta(days=31)
+        months_touched: set[tuple[int, int]] = set()
+        d = date(today.year, today.month, 1)
+        while d <= last_date:
+            months_touched.add((d.year, d.month))
+            d = date(d.year + 1, 1, 1) if d.month == 12 else date(d.year, d.month + 1, 1)
+        for y, m in sorted(months_touched):
+            try:
+                await generate_monthly_bills(db, template.user_id, y, m)
+            except Exception:
+                pass
 
     await db.refresh(template, ["category"])
     return template
@@ -233,12 +254,31 @@ async def generate_monthly_bills(
 
 
 def _should_generate(template: BillTemplate, year: int, month: int) -> bool:
-    """Check if a template should generate an instance for the given month."""
+    """Decide whether to generate an instance for this template in (year, month).
+
+    For non-monthly recurrences the user can configure `due_month_of_year` to
+    anchor when the cycle fires. Without an anchor we fall back to the legacy
+    defaults (annual = January, semiannual = Jan+Jul, etc.) so existing data
+    keeps its old behavior.
+    """
     recurrence = template.recurrence_type.value
     if recurrence == "monthly":
         return True
+
+    anchor = getattr(template, "due_month_of_year", None)
+    if anchor is not None and 1 <= anchor <= 12:
+        if recurrence == "annual":
+            return month == anchor
+        if recurrence == "semiannual":
+            return month in (anchor, ((anchor - 1 + 6) % 12) + 1)
+        if recurrence == "quarterly":
+            return month in {((anchor - 1 + k) % 12) + 1 for k in (0, 3, 6, 9)}
+        if recurrence == "bimonthly":
+            return (month - anchor) % 2 == 0
+
+    # Legacy default
     if recurrence == "bimonthly":
-        return month % 2 == 1  # odd months
+        return month % 2 == 1
     if recurrence == "quarterly":
         return month in (1, 4, 7, 10)
     if recurrence == "semiannual":
@@ -246,6 +286,44 @@ def _should_generate(template: BillTemplate, year: int, month: int) -> bool:
     if recurrence == "annual":
         return month == 1
     return True
+
+
+def next_instance_date(
+    template: BillTemplate,
+    today: date,
+    last_paid: date | None = None,
+    horizon_months: int = 24,
+) -> date | None:
+    """Compute the next calendar date this template will generate an instance for.
+
+    Walks forward up to `horizon_months` from `today` looking for the first
+    (year, month) where `_should_generate` is True AND the resulting due_date
+    is strictly after `today`, `template.created_at`, and `last_paid` if any.
+
+    Returns None if no match within the horizon (defensive guard).
+    """
+    created_local = template.created_at.astimezone(ZoneInfo("America/Bogota")).date()
+    floor = today
+    if created_local > floor:
+        floor = created_local
+    if last_paid and last_paid >= floor:
+        floor = last_paid
+
+    y, m = today.year, today.month
+    for _ in range(horizon_months):
+        if _should_generate(template, y, m):
+            last_day = calendar.monthrange(y, m)[1]
+            due = date(y, m, min(template.due_day_of_month, last_day))
+            # The first instance can be exactly today (still actionable),
+            # so we accept due >= today; later instances must be strictly
+            # after the floor (today, created, last paid).
+            if due >= today and due >= created_local and (last_paid is None or due > last_paid):
+                return due
+        m += 1
+        if m > 12:
+            m = 1
+            y += 1
+    return None
 
 
 async def get_bill_instances(

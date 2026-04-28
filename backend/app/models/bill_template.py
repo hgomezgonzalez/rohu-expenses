@@ -34,6 +34,11 @@ class BillTemplate(Base):
     provider: Mapped[str | None] = mapped_column(String(200), nullable=True)
     estimated_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     due_day_of_month: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Anchor month for non-monthly recurrences (1-12). When NULL, fall back to
+    # the legacy default (annual = January, semiannual = Jan+Jul, etc.).
+    due_month_of_year: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, default=None
+    )
     recurrence_type: Mapped[RecurrenceType] = mapped_column(
         Enum(RecurrenceType), default=RecurrenceType.MONTHLY
     )

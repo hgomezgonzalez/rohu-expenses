@@ -149,6 +149,9 @@ async def main():
         await conn.execute(text(
             "ALTER TABLE notification_rules ADD COLUMN IF NOT EXISTS overdue_max_reminders INTEGER NOT NULL DEFAULT 7"
         ))
+        await conn.execute(text(
+            "ALTER TABLE bill_templates ADD COLUMN IF NOT EXISTS due_month_of_year INTEGER"
+        ))
     print("Schema migrations applied.")
 
     # Cleanup: remove unpaid bill_instances whose due_date predates the

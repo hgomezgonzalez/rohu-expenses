@@ -438,10 +438,12 @@ export interface BillTemplate {
   provider: string | null;
   estimated_amount: number;
   due_day_of_month: number;
+  due_month_of_year: number | null;
   recurrence_type: string;
   is_active: boolean;
   notes: string | null;
   created_at: string;
+  next_instance_date: string | null;
 }
 
 export interface BillTemplateCreate {
@@ -450,6 +452,7 @@ export interface BillTemplateCreate {
   provider?: string;
   estimated_amount: number;
   due_day_of_month: number;
+  due_month_of_year?: number | null;
   recurrence_type?: string;
   notes?: string;
 }

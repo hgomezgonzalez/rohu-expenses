@@ -24,6 +24,7 @@ class BillTemplateCreate(BaseModel):
     provider: str | None = Field(None, max_length=200)
     estimated_amount: Decimal = Field(gt=0, decimal_places=2)
     due_day_of_month: int = Field(ge=1, le=31)
+    due_month_of_year: int | None = Field(None, ge=1, le=12)
     recurrence_type: RecurrenceType = RecurrenceType.MONTHLY
     notes: str | None = Field(None, max_length=500)
 
@@ -33,6 +34,7 @@ class BillTemplateUpdate(BaseModel):
     provider: str | None = Field(None, max_length=200)
     estimated_amount: Decimal | None = Field(None, gt=0, decimal_places=2)
     due_day_of_month: int | None = Field(None, ge=1, le=31)
+    due_month_of_year: int | None = Field(None, ge=1, le=12)
     recurrence_type: RecurrenceType | None = None
     is_active: bool | None = None
     notes: str | None = Field(None, max_length=500)
@@ -45,10 +47,12 @@ class BillTemplateResponse(BaseModel):
     provider: str | None
     estimated_amount: Decimal
     due_day_of_month: int
+    due_month_of_year: int | None = None
     recurrence_type: RecurrenceType
     is_active: bool
     notes: str | None
     created_at: datetime
+    next_instance_date: date | None = None
 
     model_config = {"from_attributes": True}
 

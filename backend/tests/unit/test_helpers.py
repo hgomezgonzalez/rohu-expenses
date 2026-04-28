@@ -244,6 +244,68 @@ def test_retroactive_guard_late_utc_creation_counts_as_local_day():
     assert date(2026, 4, 24) < created_local   # day-before bill skipped
 
 
+def _make_template(recurrence: str, due_day: int, anchor=None, created_at=None):
+    """Build a stand-in BillTemplate for pure tests of _should_generate /
+    next_instance_date — avoids touching SQLAlchemy."""
+    bogota = ZoneInfo("America/Bogota")
+    if created_at is None:
+        created_at = datetime(2026, 4, 25, 12, 0, tzinfo=bogota)
+    return SimpleNamespace(
+        recurrence_type=SimpleNamespace(value=recurrence),
+        due_day_of_month=due_day,
+        due_month_of_year=anchor,
+        created_at=created_at,
+    )
+
+
+def test_should_generate_annual_with_explicit_anchor():
+    """Bug fix: annual with anchor=4 fires only in April (not January)."""
+    from app.services.bill_service import _should_generate
+    tpl = _make_template("annual", 28, anchor=4)
+    assert _should_generate(tpl, 2026, 4) is True
+    assert _should_generate(tpl, 2026, 1) is False
+    assert _should_generate(tpl, 2027, 4) is True
+
+
+def test_should_generate_semiannual_with_anchor():
+    """Semiannual anchor=4 fires in April AND October."""
+    from app.services.bill_service import _should_generate
+    tpl = _make_template("semiannual", 15, anchor=4)
+    assert _should_generate(tpl, 2026, 4) is True
+    assert _should_generate(tpl, 2026, 10) is True
+    assert _should_generate(tpl, 2026, 7) is False
+
+
+def test_should_generate_legacy_when_no_anchor():
+    """Backwards compat: annual without anchor fires only in January."""
+    from app.services.bill_service import _should_generate
+    tpl = _make_template("annual", 28, anchor=None)
+    assert _should_generate(tpl, 2026, 1) is True
+    assert _should_generate(tpl, 2026, 4) is False
+
+
+def test_next_instance_date_annual_anchor_april_today_28apr():
+    """Cambio aceite Suzuki regression: today=28 abr, anchor=4, due_day=28 →
+    next instance is 28 abr 2026 (today itself)."""
+    from app.services.bill_service import next_instance_date
+    bogota = ZoneInfo("America/Bogota")
+    tpl = _make_template("annual", 28, anchor=4,
+                         created_at=datetime(2026, 4, 25, 12, 0, tzinfo=bogota))
+    next_date = next_instance_date(tpl, today=date(2026, 4, 28))
+    assert next_date == date(2026, 4, 28)
+
+
+def test_next_instance_date_annual_anchor_april_after_due_passed():
+    """After this year's due passed, next instance is next year's same month."""
+    from app.services.bill_service import next_instance_date
+    bogota = ZoneInfo("America/Bogota")
+    tpl = _make_template("annual", 28, anchor=4,
+                         created_at=datetime(2026, 4, 25, 12, 0, tzinfo=bogota))
+    next_date = next_instance_date(tpl, today=date(2026, 5, 5),
+                                    last_paid=date(2026, 4, 28))
+    assert next_date == date(2027, 4, 28)
+
+
 def test_pre_job_horizon_covers_seven_day_reminder():
     """The pre-job auto-generates bills for [today, today+31d]. A bill due
     7 days from today must be covered by that window — otherwise the cron

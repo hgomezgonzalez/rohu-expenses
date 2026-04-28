@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Plus, X, Edit2, Trash2, ToggleLeft, ToggleRight, Bell, BellOff, ChevronDown, ChevronUp, Search } from "lucide-react";
+import { Plus, X, Edit2, Trash2, ToggleLeft, ToggleRight, Bell, BellOff, ChevronDown, ChevronUp, Search, CalendarClock } from "lucide-react";
 import ConfirmModal from "@/components/ConfirmModal";
+import TemplatesSummary from "@/components/TemplatesSummary";
 import {
   getBillTemplates, createBillTemplate, updateBillTemplate, deleteBillTemplate, getCategories,
   getNotificationRule, updateNotificationRule,
@@ -14,6 +15,18 @@ const RECURRENCE_LABELS: Record<string, string> = {
   monthly: "Mensual", bimonthly: "Bimestral", quarterly: "Trimestral",
   semiannual: "Semestral", annual: "Anual",
 };
+
+const MONTH_NAMES_ES = [
+  "", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+  "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
+];
+
+function formatNextDate(iso: string | null): string {
+  if (!iso) return "—";
+  const [y, m, d] = iso.split("-").map(Number);
+  if (!y || !m || !d) return iso;
+  return `${d} ${MONTH_NAMES_ES[m]?.toLowerCase().slice(0, 3) ?? m} ${y}`;
+}
 
 const REMINDER_DAYS = [
   { value: 7, label: "7 días antes" },
@@ -38,6 +51,7 @@ export default function TemplatesPage() {
   const [provider, setProvider] = useState("");
   const [amount, setAmount] = useState("");
   const [dueDay, setDueDay] = useState("15");
+  const [dueMonth, setDueMonth] = useState<string>(""); // "" means default (legacy: jan)
   const [recurrence, setRecurrence] = useState("monthly");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
@@ -69,14 +83,16 @@ export default function TemplatesPage() {
 
   function resetForm() {
     setName(""); setProvider(""); setAmount(""); setDueDay("15");
-    setRecurrence("monthly"); setNotes(""); setEditingId(null); setError("");
+    setDueMonth(""); setRecurrence("monthly"); setNotes(""); setEditingId(null); setError("");
     if (categories.length > 0) setCategoryId(categories[0].id);
   }
 
   function startEdit(t: BillTemplate) {
     setEditingId(t.id); setName(t.name); setCategoryId(t.category.id);
     setProvider(t.provider || ""); setAmount(String(t.estimated_amount));
-    setDueDay(String(t.due_day_of_month)); setRecurrence(t.recurrence_type);
+    setDueDay(String(t.due_day_of_month));
+    setDueMonth(t.due_month_of_year ? String(t.due_month_of_year) : "");
+    setRecurrence(t.recurrence_type);
     setNotes(t.notes || ""); setShowForm(true);
   }
 
@@ -86,6 +102,7 @@ export default function TemplatesPage() {
     const data: BillTemplateCreate = {
       category_id: categoryId, name, provider: provider || undefined,
       estimated_amount: parseFloat(amount), due_day_of_month: parseInt(dueDay),
+      due_month_of_year: recurrence !== "monthly" && dueMonth ? parseInt(dueMonth) : null,
       recurrence_type: recurrence, notes: notes || undefined,
     };
     try {
@@ -180,20 +197,23 @@ export default function TemplatesPage() {
         </button>
       </div>
 
-      {/* Search & Filter */}
+      {/* Summary cards + category pills */}
       {templates.length > 0 && (
-        <div className="flex items-center gap-3">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input type="text" placeholder="Buscar por nombre o proveedor..."
-              value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-rohu-accent text-sm" />
-          </div>
-          <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)}
-            className="px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-rohu-accent text-sm">
-            <option value="all">Todas</option>
-            {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
+        <TemplatesSummary
+          templates={templates}
+          categories={categories}
+          filterCategory={filterCategory}
+          onFilterCategory={setFilterCategory}
+        />
+      )}
+
+      {/* Search */}
+      {templates.length > 0 && (
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input type="text" placeholder="Buscar por nombre o proveedor..."
+            value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-10 pr-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-rohu-accent text-sm" />
         </div>
       )}
 
@@ -240,6 +260,25 @@ export default function TemplatesPage() {
                   {Object.entries(RECURRENCE_LABELS).map(([val, label]) => <option key={val} value={val}>{label}</option>)}
                 </select>
               </div>
+              {recurrence !== "monthly" && (
+                <div>
+                  <label className="block text-xs font-medium text-rohu-muted mb-1">
+                    Mes de vencimiento {recurrence === "annual" ? "(anual)" : recurrence === "semiannual" ? "(primer mes del par)" : "(mes ancla)"}
+                  </label>
+                  <select value={dueMonth} onChange={(e) => setDueMonth(e.target.value)} className={inputClass}>
+                    <option value="">Por defecto (Enero)</option>
+                    {MONTH_NAMES_ES.slice(1).map((m, i) => (
+                      <option key={i + 1} value={String(i + 1)}>{m}</option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-rohu-muted mt-1">
+                    {recurrence === "annual" && "La factura se generará una vez al año en el mes seleccionado."}
+                    {recurrence === "semiannual" && "Se generará en el mes seleccionado y 6 meses después."}
+                    {recurrence === "quarterly" && "Se generará cada 3 meses a partir del mes seleccionado."}
+                    {recurrence === "bimonthly" && "Se generará cada 2 meses a partir del mes seleccionado."}
+                  </p>
+                </div>
+              )}
               {error && <p className="text-red-600 text-sm">{error}</p>}
               <button type="submit" disabled={saving}
                 className="w-full py-2.5 bg-rohu-primary text-white font-semibold rounded-lg hover:bg-rohu-primary-dark disabled:opacity-50">
@@ -282,6 +321,12 @@ export default function TemplatesPage() {
                       <span>Día {t.due_day_of_month}</span>
                       <span className="hidden md:inline">{RECURRENCE_LABELS[t.recurrence_type]}</span>
                     </div>
+                    {t.is_active && t.next_instance_date && (
+                      <div className="flex items-center gap-1 text-xs text-rohu-muted mt-1">
+                        <CalendarClock className="w-3 h-3" />
+                        <span>Próxima factura: <strong className="text-rohu-primary">{formatNextDate(t.next_instance_date)}</strong></span>
+                      </div>
+                    )}
                   </div>
                   <span className="font-bold text-lg flex-shrink-0">{formatCurrency(t.estimated_amount)}</span>
                 </div>

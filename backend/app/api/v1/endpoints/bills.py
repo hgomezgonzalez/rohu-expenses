@@ -1,13 +1,16 @@
 import uuid
-from datetime import date
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.api.v1.deps import get_current_user, get_current_admin
 from app.models.user import User
-from app.models.bill_instance import BillStatus
+from app.models.bill_instance import BillStatus, BillInstance
+from app.models.bill_template import BillTemplate
 from app.schemas.bill import (
     BillTemplateCreate,
     BillTemplateUpdate,
@@ -21,6 +24,37 @@ from app.services import bill_service
 router = APIRouter(prefix="/bills", tags=["bills"])
 
 
+async def _build_template_response(db: AsyncSession, template: BillTemplate) -> BillTemplateResponse:
+    """Serialize a template, computing next_instance_date based on the last
+    paid instance and the template's recurrence + anchor."""
+    today = datetime.now(ZoneInfo("America/Bogota")).date()
+    last_paid_q = await db.execute(
+        select(BillInstance.due_date)
+        .where(
+            BillInstance.bill_template_id == template.id,
+            BillInstance.status == BillStatus.PAID,
+        )
+        .order_by(desc(BillInstance.due_date))
+        .limit(1)
+    )
+    last_paid = last_paid_q.scalar()
+    next_date = bill_service.next_instance_date(template, today, last_paid)
+    return BillTemplateResponse(
+        id=template.id,
+        category=CategoryResponse.model_validate(template.category),
+        name=template.name,
+        provider=template.provider,
+        estimated_amount=template.estimated_amount,
+        due_day_of_month=template.due_day_of_month,
+        due_month_of_year=template.due_month_of_year,
+        recurrence_type=template.recurrence_type,
+        is_active=template.is_active,
+        notes=template.notes,
+        created_at=template.created_at,
+        next_instance_date=next_date,
+    )
+
+
 # --- Bill Templates ---
 
 @router.post("/templates", response_model=BillTemplateResponse, status_code=status.HTTP_201_CREATED)
@@ -30,7 +64,7 @@ async def create_template(
     db: AsyncSession = Depends(get_db),
 ):
     template = await bill_service.create_bill_template(db, user.id, data)
-    return template
+    return await _build_template_response(db, template)
 
 
 @router.get("/templates", response_model=list[BillTemplateResponse])
@@ -38,7 +72,8 @@ async def list_templates(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    return await bill_service.get_bill_templates(db, user.id)
+    templates = await bill_service.get_bill_templates(db, user.id)
+    return [await _build_template_response(db, t) for t in templates]
 
 
 @router.get("/templates/{template_id}", response_model=BillTemplateResponse)
@@ -50,7 +85,7 @@ async def get_template(
     template = await bill_service.get_bill_template(db, template_id, user.id)
     if not template:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Template not found")
-    return template
+    return await _build_template_response(db, template)
 
 
 @router.patch("/templates/{template_id}", response_model=BillTemplateResponse)
@@ -63,7 +98,8 @@ async def update_template(
     template = await bill_service.get_bill_template(db, template_id, user.id)
     if not template:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Template not found")
-    return await bill_service.update_bill_template(db, template, data)
+    updated = await bill_service.update_bill_template(db, template, data)
+    return await _build_template_response(db, updated)
 
 
 @router.delete("/templates/{template_id}", status_code=status.HTTP_204_NO_CONTENT)
