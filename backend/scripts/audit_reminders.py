@@ -77,12 +77,38 @@ async def main():
             us_q = await db.execute(select(UserSettings).where(UserSettings.user_id == user.id))
             us = us_q.scalars().first()
 
+            # Distribution of how rules look across the user's bills
+            for b in user_bills:
+                tpl = b.template
+                if not tpl or not tpl.notification_rules:
+                    continue
+                for r in tpl.notification_rules:
+                    if r.is_active:
+                        counters["rules.active.count"] += 1
+                        if r.remind_days_before == "7,3,1,0":
+                            counters["rules.active.default_days"] += 1
+                        else:
+                            counters["rules.active.custom_days"] += 1
+                        if r.extra_emails:
+                            counters["rules.active.with_extra_emails"] += 1
+                    else:
+                        counters["rules.inactive.count"] += 1
+
             for b in user_bills:
                 tpl = b.template
                 if not tpl or not tpl.notification_rules:
                     counters["bills.skip.no_rule"] += 1
                     continue
                 days = (b.due_date - today).days
+                # Bucket by days for diagnosability
+                if days < 0:
+                    counters["bills.days_bucket.overdue"] += 1
+                elif days == 0:
+                    counters["bills.days_bucket.today"] += 1
+                elif days <= 7:
+                    counters[f"bills.days_bucket.in_{days}d"] += 1
+                else:
+                    counters["bills.days_bucket.gt_7d"] += 1
                 fired = False
                 for rule in tpl.notification_rules:
                     if not rule.is_active:
