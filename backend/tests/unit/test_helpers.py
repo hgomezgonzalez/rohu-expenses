@@ -7,6 +7,8 @@ import pytest
 
 from app.api.v1.endpoints.auth import _wa_me_link
 from app.core.pay_cycle import get_pay_cycle, navigate_pay_cycle
+from app.models.bill_instance import BillStatus
+from app.services.bill_service import compute_bill_status
 from app.services.dashboard_service import income_entry_date as dashboard_entry_date
 from app.services.income_service import _entry_date, _months_in_cycle, entry_date
 
@@ -140,6 +142,39 @@ def test_cycle_filter_includes_april_recurring_within_april_to_may_cycle():
     # May entry with day=27 → 2026-05-27 → OUTSIDE cycle (next cycle's territory)
     may_entry = _stub_entry(2026, 5, day_of_month=27)
     assert not (cycle_start <= _entry_date(may_entry) <= cycle_end)
+
+
+# ---- Bill status transitions ------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("due_date", "today", "expected"),
+    [
+        # Past due → OVERDUE
+        (date(2026, 4, 26), date(2026, 4, 27), BillStatus.OVERDUE),
+        (date(2026, 1, 1),  date(2026, 4, 27), BillStatus.OVERDUE),
+        # Due today → DUE_SOON (within window)
+        (date(2026, 4, 27), date(2026, 4, 27), BillStatus.DUE_SOON),
+        # Within 7 days → DUE_SOON
+        (date(2026, 4, 30), date(2026, 4, 27), BillStatus.DUE_SOON),
+        (date(2026, 5, 4),  date(2026, 4, 27), BillStatus.DUE_SOON),  # exactly 7 days
+        # More than 7 days out → PENDING
+        (date(2026, 5, 5),  date(2026, 4, 27), BillStatus.PENDING),
+        (date(2026, 6, 1),  date(2026, 4, 27), BillStatus.PENDING),
+    ],
+)
+def test_compute_bill_status(due_date, today, expected):
+    assert compute_bill_status(due_date, today) == expected
+
+
+def test_compute_bill_status_recovers_from_overdue():
+    """The reported bug: a bill stuck in OVERDUE whose due_date now lies in the
+    future must be reclassified. The pure helper has no memory of the prior
+    status, so it always returns the right answer for the new due_date."""
+    # Tarjeta de crédito case: due_date 2026-04-30 evaluated on 2026-04-27.
+    assert compute_bill_status(date(2026, 4, 30), date(2026, 4, 27)) == BillStatus.DUE_SOON
+    # And once the date passes, it flips OVERDUE again.
+    assert compute_bill_status(date(2026, 4, 30), date(2026, 5, 1)) == BillStatus.OVERDUE
 
 
 def test_cycle_filter_includes_may_entry_with_day_below_cycle_end():

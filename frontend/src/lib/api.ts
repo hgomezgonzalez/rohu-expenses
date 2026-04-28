@@ -140,6 +140,10 @@ export async function getBudgetVariance(year: number, month: number) {
   return request<BudgetVariance>(`/dashboard/budget-variance?year=${year}&month=${month}`);
 }
 
+export async function getBudgetVarianceByCycle(refDate: string) {
+  return request<BudgetVariance>(`/dashboard/budget-variance?mode=cycle&ref_date=${refDate}`);
+}
+
 export async function getCashflow(year: number, month: number) {
   return request<CashflowForecast>(`/dashboard/cashflow?year=${year}&month=${month}`);
 }

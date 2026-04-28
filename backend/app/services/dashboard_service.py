@@ -179,17 +179,38 @@ async def get_dashboard_summary(
 
 
 async def get_budget_variance(
-    db: AsyncSession, user_id: uuid.UUID, year: int, month: int
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    year: int | None = None,
+    month: int | None = None,
+    *,
+    cycle_start: date | None = None,
+    cycle_end: date | None = None,
 ) -> BudgetVarianceResponse:
+    """Budget vs actual by category.
+
+    Two windowing modes:
+    - Calendar month: pass `year` and `month`. Filters by BillInstance.year/month.
+    - Pay cycle: pass `cycle_start` and `cycle_end` (inclusive). Filters by
+      BillInstance.due_date between the two dates so the variance matches the
+      ciclo de pago view shown in dashboard/income.
+    """
+    where_clauses = [BillInstance.user_id == user_id]
+    if cycle_start is not None and cycle_end is not None:
+        where_clauses += [
+            BillInstance.due_date >= cycle_start,
+            BillInstance.due_date <= cycle_end,
+        ]
+    else:
+        if year is None or month is None:
+            raise ValueError("get_budget_variance requires either (year, month) or (cycle_start, cycle_end)")
+        where_clauses += [BillInstance.year == year, BillInstance.month == month]
+
     # Get all bill instances grouped by category
     result = await db.execute(
         select(BillInstance)
         .options(joinedload(BillInstance.category), joinedload(BillInstance.payments))
-        .where(
-            BillInstance.user_id == user_id,
-            BillInstance.year == year,
-            BillInstance.month == month,
-        )
+        .where(*where_clauses)
     )
     instances = list(result.scalars().unique().all())
 
@@ -234,6 +255,15 @@ async def get_budget_variance(
 
     # Sort by absolute variance descending (biggest deviations first)
     items.sort(key=lambda x: abs(x.variance_amount), reverse=True)
+
+    # When called in cycle mode, derive a representative year/month from the
+    # cycle's end date so the response payload remains valid and the income
+    # summary covers the cycle's anchor month.
+    if cycle_start is not None and cycle_end is not None:
+        if year is None:
+            year = cycle_end.year
+        if month is None:
+            month = cycle_end.month
 
     # Income variance summary
     total_income, income_confirmed, income_expected, breakdown, _ = await _get_monthly_income(

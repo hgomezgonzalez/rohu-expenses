@@ -132,7 +132,15 @@ export default function DashboardPage() {
 
   const statusOrder = { overdue: 0, due_soon: 1, pending: 2, paid: 3, cancelled: 4 };
   const sortedBills = [...bills]
-    .sort((a, b) => (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9))
+    .sort((a, b) => {
+      const sa = statusOrder[a.status] ?? 9;
+      const sb = statusOrder[b.status] ?? 9;
+      if (sa !== sb) return sa - sb;
+      // Tiebreakers within the same status bucket: chronological by due_date,
+      // then alphabetical by name. Keeps order stable across renders/refetches.
+      if (a.due_date !== b.due_date) return a.due_date.localeCompare(b.due_date);
+      return a.name.localeCompare(b.name, "es");
+    })
     .filter((bill) => {
       const q = billSearch.toLowerCase();
       const matchesSearch = !q || bill.name.toLowerCase().includes(q);

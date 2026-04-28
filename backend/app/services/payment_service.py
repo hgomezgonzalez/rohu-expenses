@@ -1,6 +1,6 @@
 import os
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from sqlalchemy import select, extract
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,6 +12,7 @@ from app.models.payment import Payment
 from app.models.attachment import Attachment
 from app.schemas.payment import PaymentCreate, PaymentWithBillResponse, AttachmentResponse
 from app.core.config import settings
+from app.services.bill_service import compute_bill_status
 
 
 async def record_payment(
@@ -218,14 +219,8 @@ async def reverse_payment(db: AsyncSession, payment_id: uuid.UUID, user_id: uuid
             select(Payment).where(Payment.bill_instance_id == bill_instance.id)
         )
         if not other_payments.scalars().first():
-            # No more payments — revert status based on date
-            today = date.today()
-            if bill_instance.due_date < today:
-                bill_instance.status = BillStatus.OVERDUE
-            elif (bill_instance.due_date - today).days <= 7:
-                bill_instance.status = BillStatus.DUE_SOON
-            else:
-                bill_instance.status = BillStatus.PENDING
+            # No more payments — revert status based on due_date.
+            bill_instance.status = compute_bill_status(bill_instance.due_date)
             bill_instance.paid_at = None
             await db.flush()
 

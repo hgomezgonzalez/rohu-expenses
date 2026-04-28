@@ -270,8 +270,33 @@ async def get_bill_instance(
     return result.scalars().first()
 
 
+DUE_SOON_DAYS = 7
+
+
+def compute_bill_status(due_date: date, today: date | None = None) -> BillStatus:
+    """Pure helper: derive a bill's lifecycle status from its due_date.
+
+    OVERDUE if past due, DUE_SOON within DUE_SOON_DAYS days, PENDING otherwise.
+    PAID and CANCELLED are terminal states owned by the payment/cancel flows
+    and are NOT computed here — callers must skip those instances.
+    """
+    if today is None:
+        today = date.today()
+    days_to_due = (due_date - today).days
+    if days_to_due < 0:
+        return BillStatus.OVERDUE
+    if days_to_due <= DUE_SOON_DAYS:
+        return BillStatus.DUE_SOON
+    return BillStatus.PENDING
+
+
 async def update_bill_statuses(db: AsyncSession, user_id: uuid.UUID) -> int:
-    """Update bill instance statuses based on current date. Returns count of updated bills."""
+    """Recompute statuses for non-terminal bills based on current date.
+
+    Returns count of updated bills. Idempotent — runs the full transition
+    matrix (e.g. OVERDUE→DUE_SOON when a corrected due_date moves to the
+    future, OVERDUE→PENDING, DUE_SOON→OVERDUE, etc).
+    """
     today = date.today()
     updated = 0
 
@@ -285,15 +310,9 @@ async def update_bill_statuses(db: AsyncSession, user_id: uuid.UUID) -> int:
     instances = result.scalars().all()
 
     for instance in instances:
-        if instance.due_date < today and instance.status != BillStatus.OVERDUE:
-            instance.status = BillStatus.OVERDUE
-            updated += 1
-        elif (
-            instance.due_date >= today
-            and (instance.due_date - today).days <= 7
-            and instance.status == BillStatus.PENDING
-        ):
-            instance.status = BillStatus.DUE_SOON
+        target = compute_bill_status(instance.due_date, today)
+        if instance.status != target:
+            instance.status = target
             updated += 1
 
     if updated:

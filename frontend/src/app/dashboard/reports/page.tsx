@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { usePathname } from "next/navigation";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import {
-  getDashboardFull, getDashboardByCycle, getBudgetVariance,
+  getDashboardFull, getDashboardByCycle, getBudgetVariance, getBudgetVarianceByCycle,
   getPayCycle, PayCycleResponse,
   BudgetVariance, BudgetVarianceItem, CashflowForecast, DashboardSummary, BillInstance,
 } from "@/lib/api";
@@ -37,7 +37,11 @@ export default function ReportsPage() {
   const pathname = usePathname();
 
   // Period state — supports both calendar month and pay cycle modes.
-  const now = new Date();
+  // `nowRef` is captured once on mount so callbacks that depend on "today"
+  // don't recreate every render (which previously caused an infinite refetch
+  // loop when used as a useCallback dependency).
+  const nowRef = useRef(new Date());
+  const now = nowRef.current;
   const todayIso = now.toISOString().slice(0, 10);
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
@@ -76,7 +80,13 @@ export default function ReportsPage() {
     if (cycle === null) return;
     setLoading(true);
     try {
-      const v = await getBudgetVariance(anchor.year, anchor.month);
+      // Variance and dashboard data must agree on the same window, so when the
+      // user is in cycle mode we use the cycle-aware variance endpoint instead
+      // of the calendar-month one. Otherwise the BudgetChart shows $0 ejecutado
+      // because pagos del ciclo viven en el mes calendario anterior.
+      const v = isCycleMode
+        ? await getBudgetVarianceByCycle(cycleRef)
+        : await getBudgetVariance(anchor.year, anchor.month);
       setVariance(v);
       if (isCycleMode) {
         const data = await getDashboardByCycle(cycleRef);
@@ -97,10 +107,13 @@ export default function ReportsPage() {
   }, [cycle, isCycleMode, cycleRef, year, month, anchor.year, anchor.month]);
 
   // Load last 6 calendar months in parallel for sparkline / heatmap / 3m compare.
+  // Empty deps: `nowRef.current` is stable across renders, so this callback only
+  // exists once and doesn't loop the useEffect below.
   const loadHistory = useCallback(async () => {
+    const base = nowRef.current;
     const sixMonths: { y: number; m: number }[] = [];
     for (let i = 5; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const d = new Date(base.getFullYear(), base.getMonth() - i, 1);
       sixMonths.push({ y: d.getFullYear(), m: d.getMonth() + 1 });
     }
     const [variances, fulls] = await Promise.all([
@@ -111,7 +124,7 @@ export default function ReportsPage() {
       variances: sixMonths.map((p, i) => ({ year: p.y, month: p.m, variance: variances[i] })),
       full: sixMonths.map((p, i) => ({ year: p.y, month: p.m, full: fulls[i] })),
     });
-  }, [now]);
+  }, []);
 
   useEffect(() => { loadCurrent(); }, [loadCurrent]);
   useEffect(() => { loadHistory(); }, [loadHistory]);

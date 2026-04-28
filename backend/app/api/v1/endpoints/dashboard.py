@@ -86,9 +86,32 @@ async def get_summary(
 async def get_budget_variance(
     year: int = Query(default_factory=lambda: date.today().year),
     month: int = Query(default_factory=lambda: date.today().month, ge=1, le=12),
+    mode: str = Query(default="calendar"),
+    ref_date: str | None = Query(default=None),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Budget vs actual.
+
+    mode=calendar (default): filter by year/month.
+    mode=cycle: filter by user's pay cycle around ref_date so the response
+                matches the dashboard cycle view.
+    """
+    if mode == "cycle":
+        us_result = await db.execute(
+            select(UserSettings).where(UserSettings.user_id == user.id)
+        )
+        us = us_result.scalars().first()
+        if not us or not us.pay_cycle_start_day:
+            return await dashboard_service.get_budget_variance(db, user.id, year, month)
+
+        ref = date.fromisoformat(ref_date) if ref_date else date.today()
+        cycle = get_pay_cycle(us.pay_cycle_start_day, ref)
+        cycle_start = date.fromisoformat(cycle["start_date"])
+        cycle_end = date.fromisoformat(cycle["end_date"])
+        return await dashboard_service.get_budget_variance(
+            db, user.id, cycle_start=cycle_start, cycle_end=cycle_end,
+        )
     return await dashboard_service.get_budget_variance(db, user.id, year, month)
 
 
