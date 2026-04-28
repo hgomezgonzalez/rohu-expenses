@@ -2,7 +2,7 @@ import uuid
 import enum
 from datetime import datetime, timezone
 
-from sqlalchemy import String, Boolean, DateTime, ForeignKey, Enum, ARRAY
+from sqlalchemy import String, Boolean, DateTime, Integer, ForeignKey, Enum, ARRAY
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -32,6 +32,9 @@ class NotificationRule(Base):
         String(100), default="7,3,1,0", nullable=False
     )  # comma-separated: "7,3,1,0" means 7, 3, 1 days before and on due date
     remind_overdue_daily: Mapped[bool] = mapped_column(Boolean, default=True)
+    overdue_max_reminders: Mapped[int] = mapped_column(
+        Integer, default=7, nullable=False, server_default="7"
+    )  # cap on daily overdue reminders to prevent runaway notifications
     channels: Mapped[str] = mapped_column(
         String(100), default="email,push", nullable=False
     )  # comma-separated channels

@@ -1,7 +1,8 @@
 """Unit tests for pure helpers used by the cycle/income/whatsapp features."""
 
-from datetime import date
+from datetime import date, datetime, timezone
 from types import SimpleNamespace
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -202,3 +203,22 @@ def test_cycle_filter_includes_may_entry_with_day_below_cycle_end():
 
     may_entry = _stub_entry(2026, 5, day_of_month=15)
     assert cycle_start <= _entry_date(may_entry) <= cycle_end
+
+
+# ---- Bogota-anchored "today" never disagrees with bill status logic ----
+
+
+def test_compute_bill_status_with_bogota_today_at_utc_late_night():
+    """Reminder/status jobs use ZoneInfo('America/Bogota') for today. Verify
+    that around the Bogota↔UTC date boundary (early UTC hours = late Bogota
+    previous day) the status is computed against the correct civil date."""
+    # 2026-04-28 03:00 UTC == 2026-04-27 22:00 in Bogota.
+    utc_moment = datetime(2026, 4, 28, 3, 0, tzinfo=timezone.utc)
+    bogota_today = utc_moment.astimezone(ZoneInfo("America/Bogota")).date()
+    assert bogota_today == date(2026, 4, 27)
+
+    # A bill due 2026-04-27 must be DUE_SOON (==0 days) in Bogota's civil day,
+    # not OVERDUE (which would be the answer if we naively used UTC's date).
+    assert compute_bill_status(date(2026, 4, 27), bogota_today) == BillStatus.DUE_SOON
+    # And a bill due 2026-04-28 is still DUE_SOON, not PENDING.
+    assert compute_bill_status(date(2026, 4, 28), bogota_today) == BillStatus.DUE_SOON

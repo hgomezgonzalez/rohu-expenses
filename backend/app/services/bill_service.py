@@ -2,6 +2,7 @@ import calendar
 import uuid
 from datetime import date, datetime, timezone
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -297,7 +298,7 @@ async def update_bill_statuses(db: AsyncSession, user_id: uuid.UUID) -> int:
     matrix (e.g. OVERDUE→DUE_SOON when a corrected due_date moves to the
     future, OVERDUE→PENDING, DUE_SOON→OVERDUE, etc).
     """
-    today = date.today()
+    today = datetime.now(ZoneInfo("America/Bogota")).date()
     updated = 0
 
     # Get all non-paid, non-cancelled instances

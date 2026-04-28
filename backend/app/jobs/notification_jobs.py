@@ -3,6 +3,7 @@ Reads SMTP/Telegram config from user_settings table in DB."""
 
 import logging
 from datetime import date, datetime, timezone
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,7 +32,9 @@ async def check_and_send_reminders():
     """Check all bill instances and send reminders based on notification rules.
     Reads notification channel config from user_settings in DB."""
     logger.info("Running reminder check...")
-    today = date.today()
+    # Always anchor "today" to America/Bogota — Heroku containers run in UTC and
+    # date.today() near midnight UTC would mis-classify days_until_due.
+    today = datetime.now(ZoneInfo("America/Bogota")).date()
 
     async with async_session_factory() as db:
         # Get all unpaid bill instances with templates and rules
@@ -90,15 +93,32 @@ async def check_and_send_reminders():
                 if not should_notify:
                     continue
 
-                # Check if already notified today for this instance
+                # Check if already notified today (Bogota day) for this instance.
+                # Convert Bogota midnight to UTC for the timestamp comparison.
+                bogota_midnight = datetime(today.year, today.month, today.day, tzinfo=ZoneInfo("America/Bogota"))
                 existing = await db.execute(
                     select(NotificationLog).where(
                         NotificationLog.bill_instance_id == instance.id,
-                        NotificationLog.created_at >= datetime(today.year, today.month, today.day, tzinfo=timezone.utc),
+                        NotificationLog.created_at >= bogota_midnight.astimezone(timezone.utc),
                     )
                 )
                 if existing.scalars().first():
                     continue
+
+                # Cap overdue reminders so a single unpaid bill cannot generate
+                # an unbounded daily stream. Counts only the overdue logs for
+                # this instance (not pre-due reminders) and respects the rule's
+                # configured cap.
+                if days_until_due < 0:
+                    overdue_count_q = await db.execute(
+                        select(NotificationLog).where(
+                            NotificationLog.bill_instance_id == instance.id,
+                            NotificationLog.template_key == "bill_reminder_overdue",
+                        )
+                    )
+                    overdue_count = len(overdue_count_q.scalars().all())
+                    if overdue_count >= rule.overdue_max_reminders:
+                        continue
 
                 amount = f"${instance.expected_amount:,.0f}"
                 due_str = instance.due_date.strftime("%d/%m/%Y")

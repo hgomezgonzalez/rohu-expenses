@@ -1,7 +1,8 @@
 """Scheduled job for generating monthly income entries from templates."""
 
 import logging
-from datetime import date
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 
@@ -16,7 +17,7 @@ logger = logging.getLogger(__name__)
 async def generate_monthly_income_entries():
     """Generate income entries for all users with active income sources.
     Runs on the 1st of each month. Idempotent."""
-    today = date.today()
+    today = datetime.now(ZoneInfo("America/Bogota")).date()
     year, month = today.year, today.month
     logger.info("Generating income entries for %d-%02d...", year, month)
 
