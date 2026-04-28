@@ -208,6 +208,61 @@ def test_cycle_filter_includes_may_entry_with_day_below_cycle_end():
 # ---- Bogota-anchored "today" never disagrees with bill status logic ----
 
 
+def test_pre_job_horizon_covers_seven_day_reminder():
+    """The pre-job auto-generates bills for [today, today+31d]. A bill due
+    7 days from today must be covered by that window — otherwise the cron
+    would skip it because the instance doesn't yet exist in DB."""
+    from datetime import timedelta
+    today = date(2026, 4, 28)
+    seven_days_out = today + timedelta(days=7)
+
+    # Months touched by [today, today+31] from the job's perspective
+    months: set[tuple[int, int]] = set()
+    last_date = today + timedelta(days=31)
+    d = date(today.year, today.month, 1)
+    while d <= last_date:
+        months.add((d.year, d.month))
+        d = date(d.year + 1, 1, 1) if d.month == 12 else date(d.year, d.month + 1, 1)
+
+    assert (seven_days_out.year, seven_days_out.month) in months
+    # Today's month is also covered (overdue/due_soon stay generated)
+    assert (today.year, today.month) in months
+
+
+def test_unconfirmed_income_skips_entry_outside_active_cycle():
+    """Bug A regression test: rocios00 has cycle_start_day=27. On 2026-04-28
+    her active cycle is 27 abr–26 may. An income entry for april with
+    day_of_month=15 has entry_date = 2026-04-15 which is OUTSIDE the active
+    cycle. The job must NOT remind her about that entry — she literally
+    cannot see it in her dashboard to confirm it."""
+    cycle = get_pay_cycle(start_day=27, reference_date=date(2026, 4, 28))
+    window_start = date.fromisoformat(cycle["start_date"])
+    window_end = date.fromisoformat(cycle["end_date"])
+    assert window_start == date(2026, 4, 27)
+    assert window_end == date(2026, 5, 26)
+
+    # April-15 entry: entry_date inside or outside the active cycle?
+    e = _stub_entry(2026, 4, day_of_month=15)
+    ed = _entry_date(e)
+    assert ed == date(2026, 4, 15)
+    assert not (window_start <= ed <= window_end)  # OUTSIDE → skip reminder
+
+
+def test_unconfirmed_income_includes_entry_inside_active_cycle_past_expected():
+    """Mirror: a recurring entry whose civil date already passed AND falls
+    inside the active cycle SHOULD be flagged for reminder."""
+    cycle = get_pay_cycle(start_day=27, reference_date=date(2026, 5, 5))
+    window_start = date.fromisoformat(cycle["start_date"])
+    window_end = date.fromisoformat(cycle["end_date"])
+    today = date(2026, 5, 5)
+
+    # Entry for april-may cycle with day_of_month=28 → entry_date 2026-04-28
+    e = _stub_entry(2026, 4, day_of_month=28)
+    ed = _entry_date(e)
+    assert window_start <= ed <= window_end
+    assert ed < today  # past expected — should remind
+
+
 def test_compute_bill_status_with_bogota_today_at_utc_late_night():
     """Reminder/status jobs use ZoneInfo('America/Bogota') for today. Verify
     that around the Bogota↔UTC date boundary (early UTC hours = late Bogota
