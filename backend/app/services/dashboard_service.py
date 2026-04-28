@@ -24,6 +24,7 @@ from app.schemas.dashboard import (
 )
 from app.schemas.bill import BillInstanceResponse, CategoryResponse
 from app.schemas.income_entry import IncomeEntryResponse
+from app.services.bill_service import generate_monthly_bills, update_bill_statuses
 from app.services.income_service import entry_date as income_entry_date, generate_income_entries
 
 logger = logging.getLogger(__name__)
@@ -197,6 +198,8 @@ async def get_budget_variance(
     """
     where_clauses = [BillInstance.user_id == user_id]
     if cycle_start is not None and cycle_end is not None:
+        # Same single-source-of-truth for cycle mode as the dashboard.
+        await _ensure_cycle_bills(db, user_id, cycle_start, cycle_end)
         where_clauses += [
             BillInstance.due_date >= cycle_start,
             BillInstance.due_date <= cycle_end,
@@ -418,10 +421,44 @@ async def get_full_dashboard(
     )
 
 
+def _calendar_months_touched(cycle_start: date, cycle_end: date) -> list[tuple[int, int]]:
+    """Return [(year, month), ...] for every calendar month touched by the cycle window."""
+    months: list[tuple[int, int]] = []
+    d = date(cycle_start.year, cycle_start.month, 1)
+    while d <= cycle_end:
+        months.append((d.year, d.month))
+        d = date(d.year + 1, 1, 1) if d.month == 12 else date(d.year, d.month + 1, 1)
+    return months
+
+
+async def _ensure_cycle_bills(
+    db: AsyncSession, user_id: uuid.UUID, cycle_start: date, cycle_end: date
+) -> None:
+    """Idempotently create the bill_instances backing this cycle.
+
+    Mirrors the auto-generate already done for income_entries inside
+    get_full_dashboard_by_cycle. Without this, brand-new users who only ever
+    enter cycle mode would see an empty dashboard despite having templates.
+    """
+    for y, m in _calendar_months_touched(cycle_start, cycle_end):
+        try:
+            await generate_monthly_bills(db, user_id, y, m)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("Auto-generate bills failed (cycle %s-%s): %s", y, m, exc)
+    # Reclassify any newly-created instances to OVERDUE / DUE_SOON / PENDING.
+    try:
+        await update_bill_statuses(db, user_id)
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("update_bill_statuses after cycle generate failed: %s", exc)
+
+
 async def get_full_dashboard_by_cycle(
     db: AsyncSession, user_id: uuid.UUID, cycle_start: date, cycle_end: date
 ) -> DashboardFull:
     """Dashboard filtered by pay cycle date range instead of calendar month."""
+    # Ensure bills exist for every calendar month the cycle touches.
+    await _ensure_cycle_bills(db, user_id, cycle_start, cycle_end)
+
     # Bills within the cycle window
     result = await db.execute(
         select(BillInstance)

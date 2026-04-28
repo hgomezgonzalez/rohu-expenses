@@ -9,7 +9,7 @@ from app.api.v1.endpoints.auth import _wa_me_link
 from app.core.pay_cycle import get_pay_cycle, navigate_pay_cycle
 from app.models.bill_instance import BillStatus
 from app.services.bill_service import compute_bill_status
-from app.services.dashboard_service import income_entry_date as dashboard_entry_date
+from app.services.dashboard_service import _calendar_months_touched, income_entry_date as dashboard_entry_date
 from app.services.income_service import _entry_date, _months_in_cycle, entry_date
 
 
@@ -165,6 +165,23 @@ def test_cycle_filter_includes_april_recurring_within_april_to_may_cycle():
 )
 def test_compute_bill_status(due_date, today, expected):
     assert compute_bill_status(due_date, today) == expected
+
+
+def test_calendar_months_touched_typical_cycle():
+    """Bill auto-generation in cycle mode iterates these calendar months."""
+    months = _calendar_months_touched(date(2026, 4, 26), date(2026, 5, 25))
+    assert months == [(2026, 4), (2026, 5)]
+
+
+def test_calendar_months_touched_year_boundary():
+    months = _calendar_months_touched(date(2026, 12, 26), date(2027, 1, 25))
+    assert months == [(2026, 12), (2027, 1)]
+
+
+def test_calendar_months_touched_single_month_when_aligned():
+    """Cycle confined to a single calendar month yields just that month."""
+    months = _calendar_months_touched(date(2026, 6, 1), date(2026, 6, 30))
+    assert months == [(2026, 6)]
 
 
 def test_compute_bill_status_recovers_from_overdue():
