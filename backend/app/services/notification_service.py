@@ -46,18 +46,6 @@ async def send_email_with_settings(user_settings, to: str, subject: str, body_ht
         logger.warning("SMTP not configured for user, skipping email to %s", to)
         return False
 
-    # Self-loop guard: Gmail (and most providers) silently drop SMTP-authenticated
-    # mail where TO == authenticated user. The send returns 250 OK but the
-    # message never reaches any folder. Treat as failure so the log is honest;
-    # other channels (Telegram) cover the user via the same job.
-    if to and user_settings.smtp_user and to.strip().lower() == user_settings.smtp_user.strip().lower():
-        logger.warning(
-            "Skipping self-loop email to %s (== smtp_user). Configure a distinct "
-            "smtp_from alias or migrate to an external provider to receive these.",
-            to,
-        )
-        return False
-
     try:
         password = decrypt(user_settings.smtp_password_encrypted) if user_settings.smtp_password_encrypted else ""
         from_email = user_settings.smtp_from_email or user_settings.smtp_user

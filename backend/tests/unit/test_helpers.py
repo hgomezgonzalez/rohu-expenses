@@ -244,27 +244,6 @@ def test_retroactive_guard_late_utc_creation_counts_as_local_day():
     assert date(2026, 4, 24) < created_local   # day-before bill skipped
 
 
-def test_send_email_self_loop_guard_skips_when_to_equals_smtp_user():
-    """Bug Y regression: the self-loop guard must short-circuit before
-    aiosmtplib.send when TO equals the authenticated SMTP user. We assert
-    the comparison logic alone (a real send_email_with_settings call would
-    require an SMTP server)."""
-    # Pure helper assertion — mirrors the guard expression.
-    smtp_user = "hgomezgonzalez@gmail.com"
-    to = "hgomezgonzalez@gmail.com"
-    assert to.strip().lower() == smtp_user.strip().lower()  # self-loop
-
-
-def test_send_email_self_loop_guard_case_insensitive():
-    """Same guard, with mixed case + whitespace — must still detect."""
-    smtp_user = "  HGomezGonzalez@Gmail.com "
-    to = "hgomezgonzalez@GMAIL.com"
-    assert to.strip().lower() == smtp_user.strip().lower()  # self-loop
-    # Sanity: a different user should NOT match
-    other = "rocios00@hotmail.com"
-    assert other.strip().lower() != smtp_user.strip().lower()
-
-
 def test_pre_job_horizon_covers_seven_day_reminder():
     """The pre-job auto-generates bills for [today, today+31d]. A bill due
     7 days from today must be covered by that window — otherwise the cron
