@@ -155,11 +155,13 @@ async def main():
     # template's creation. These were generated retroactively before the
     # `created_at` guard was added and would keep spamming overdue reminders.
     async with engine.begin() as conn:
+        # Note: SQLAlchemy's `Enum(BillStatus)` stores the Python enum *name*
+        # (uppercase) in Postgres, not the lowercase value. Match accordingly.
         result = await conn.execute(text("""
             DELETE FROM bill_instances bi
             USING bill_templates bt
             WHERE bi.bill_template_id = bt.id
-              AND bi.status NOT IN ('paid', 'cancelled')
+              AND bi.status NOT IN ('PAID', 'CANCELLED')
               AND bi.due_date < (bt.created_at AT TIME ZONE 'America/Bogota')::date
         """))
         deleted = result.rowcount or 0
