@@ -151,6 +151,21 @@ async def main():
         ))
     print("Schema migrations applied.")
 
+    # Cleanup: remove unpaid bill_instances whose due_date predates the
+    # template's creation. These were generated retroactively before the
+    # `created_at` guard was added and would keep spamming overdue reminders.
+    async with engine.begin() as conn:
+        result = await conn.execute(text("""
+            DELETE FROM bill_instances bi
+            USING bill_templates bt
+            WHERE bi.bill_template_id = bt.id
+              AND bi.status NOT IN ('paid', 'cancelled')
+              AND bi.due_date < (bt.created_at AT TIME ZONE 'America/Bogota')::date
+        """))
+        deleted = result.rowcount or 0
+        if deleted:
+            print(f"Cleanup: deleted {deleted} retroactive unpaid bill_instances.")
+
     # Create all tables (creates new tables like income_entries, skips existing)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

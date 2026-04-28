@@ -206,6 +206,14 @@ async def generate_monthly_bills(
         due_day = min(template.due_day_of_month, last_day)
         due_date = date(year, month, due_day)
 
+        # Skip retroactive instances: a template created on the 26th must NOT
+        # spawn an instance for the 5th of that same month — the user never
+        # had a chance to record it. created_at is UTC; convert to Bogota so a
+        # template created at 23:30 UTC on the 25th still counts as the 25th.
+        created_local = template.created_at.astimezone(ZoneInfo("America/Bogota")).date()
+        if due_date < created_local:
+            continue
+
         instance = BillInstance(
             bill_template_id=template.id,
             user_id=user_id,

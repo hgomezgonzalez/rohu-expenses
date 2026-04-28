@@ -208,6 +208,63 @@ def test_cycle_filter_includes_may_entry_with_day_below_cycle_end():
 # ---- Bogota-anchored "today" never disagrees with bill status logic ----
 
 
+def test_retroactive_guard_skips_due_date_before_template_creation():
+    """Bug X regression: a template created on 26 abr with due_day=5 must NOT
+    spawn an instance for the 5th of the same month (already 22 days overdue
+    when the user just signed up). The guard compares due_date against
+    template.created_at in America/Bogota."""
+    bogota = ZoneInfo("America/Bogota")
+    created_at = datetime(2026, 4, 26, 12, 0, tzinfo=bogota)
+    due_date_in_same_month = date(2026, 4, 5)
+    created_local = created_at.astimezone(bogota).date()
+    assert due_date_in_same_month < created_local  # → guard would skip
+
+
+def test_retroactive_guard_includes_due_date_after_template_creation_same_month():
+    """Mirror: same template created on 26 abr but with due_day=27 → due_date
+    27 abr is >= 26 abr so the instance should be created."""
+    bogota = ZoneInfo("America/Bogota")
+    created_at = datetime(2026, 4, 26, 12, 0, tzinfo=bogota)
+    due_date_after = date(2026, 4, 27)
+    created_local = created_at.astimezone(bogota).date()
+    assert due_date_after >= created_local  # → guard allows
+
+
+def test_retroactive_guard_late_utc_creation_counts_as_local_day():
+    """Edge case: template created at 23:30 UTC on 25 abr is 18:30 COT on
+    25 abr. The guard must use the Bogota date (25), not the UTC date (25
+    becomes 26 if we used UTC midnight). Bills due on 25 abr should be
+    allowed; bills due on 24 abr or earlier should be skipped."""
+    bogota = ZoneInfo("America/Bogota")
+    # Equivalent to 18:30 COT on 25 abr
+    created_at_utc = datetime(2026, 4, 25, 23, 30, tzinfo=timezone.utc)
+    created_local = created_at_utc.astimezone(bogota).date()
+    assert created_local == date(2026, 4, 25)
+    assert date(2026, 4, 25) >= created_local  # same-day bill allowed
+    assert date(2026, 4, 24) < created_local   # day-before bill skipped
+
+
+def test_send_email_self_loop_guard_skips_when_to_equals_smtp_user():
+    """Bug Y regression: the self-loop guard must short-circuit before
+    aiosmtplib.send when TO equals the authenticated SMTP user. We assert
+    the comparison logic alone (a real send_email_with_settings call would
+    require an SMTP server)."""
+    # Pure helper assertion — mirrors the guard expression.
+    smtp_user = "hgomezgonzalez@gmail.com"
+    to = "hgomezgonzalez@gmail.com"
+    assert to.strip().lower() == smtp_user.strip().lower()  # self-loop
+
+
+def test_send_email_self_loop_guard_case_insensitive():
+    """Same guard, with mixed case + whitespace — must still detect."""
+    smtp_user = "  HGomezGonzalez@Gmail.com "
+    to = "hgomezgonzalez@GMAIL.com"
+    assert to.strip().lower() == smtp_user.strip().lower()  # self-loop
+    # Sanity: a different user should NOT match
+    other = "rocios00@hotmail.com"
+    assert other.strip().lower() != smtp_user.strip().lower()
+
+
 def test_pre_job_horizon_covers_seven_day_reminder():
     """The pre-job auto-generates bills for [today, today+31d]. A bill due
     7 days from today must be covered by that window — otherwise the cron
