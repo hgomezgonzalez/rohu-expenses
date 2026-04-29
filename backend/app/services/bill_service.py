@@ -20,6 +20,15 @@ from app.schemas.bill import BillTemplateCreate, BillTemplateUpdate, BillInstanc
 async def create_bill_template(
     db: AsyncSession, user_id: uuid.UUID, data: BillTemplateCreate
 ) -> BillTemplate:
+    # For non-monthly recurrences, default the anchor month to "today" in
+    # Bogota when the caller didn't specify one. This prevents the "lost
+    # bill" scenario where a user creates an annual/bimonthly template
+    # mid-year and the legacy default (January / odd months) silently
+    # pushes the next instance many months into the future.
+    anchor = data.due_month_of_year
+    if anchor is None and data.recurrence_type.value != "monthly":
+        anchor = datetime.now(ZoneInfo("America/Bogota")).month
+
     template = BillTemplate(
         user_id=user_id,
         category_id=data.category_id,
@@ -27,7 +36,7 @@ async def create_bill_template(
         provider=data.provider,
         estimated_amount=data.estimated_amount,
         due_day_of_month=data.due_day_of_month,
-        due_month_of_year=data.due_month_of_year,
+        due_month_of_year=anchor,
         recurrence_type=data.recurrence_type,
         notes=data.notes,
     )

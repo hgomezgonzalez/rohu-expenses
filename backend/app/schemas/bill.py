@@ -53,6 +53,7 @@ class BillTemplateResponse(BaseModel):
     notes: str | None
     created_at: datetime
     next_instance_date: date | None = None
+    next_in_current_cycle: bool = True  # False when next_instance_date falls outside user's active cycle
 
     model_config = {"from_attributes": True}
 

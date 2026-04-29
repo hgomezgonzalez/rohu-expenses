@@ -322,9 +322,17 @@ export default function TemplatesPage() {
                       <span className="hidden md:inline">{RECURRENCE_LABELS[t.recurrence_type]}</span>
                     </div>
                     {t.is_active && t.next_instance_date && (
-                      <div className="flex items-center gap-1 text-xs text-rohu-muted mt-1">
-                        <CalendarClock className="w-3 h-3" />
+                      <div className="flex items-center gap-1.5 text-xs text-rohu-muted mt-1 flex-wrap">
+                        <CalendarClock className="w-3 h-3 flex-shrink-0" />
                         <span>Próxima factura: <strong className="text-rohu-primary">{formatNextDate(t.next_instance_date)}</strong></span>
+                        {!t.next_in_current_cycle && (
+                          <span
+                            className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-800 border border-amber-200"
+                            title="Esta plantilla no genera factura en tu ciclo de pago actual. Editala y elige otro Mes de vencimiento si quieres que aparezca."
+                          >
+                            ⚠ no en este ciclo
+                          </span>
+                        )}
                       </div>
                     )}
                   </div>

@@ -7,6 +7,7 @@ import { ChevronLeft, ChevronRight, RefreshCw, FileText, Search } from "lucide-r
 import {
   getDashboardFull, getDashboardByCycle, generateBillInstances,
   getPayCycle, PayCycleResponse, INCOME_CHANGED_EVENT,
+  getBillTemplates, BillTemplate,
   DashboardSummary, CashflowForecast, BillInstance,
 } from "@/lib/api";
 import { getMonthName } from "@/lib/utils";
@@ -15,6 +16,7 @@ import BillCard from "@/components/BillCard";
 import CashflowCard from "@/components/CashflowCard";
 import PaymentModal from "@/components/PaymentModal";
 import UndoToast from "@/components/UndoToast";
+import UpcomingOutsideCycle from "@/components/UpcomingOutsideCycle";
 import { formatCurrency } from "@/lib/utils";
 
 export default function DashboardPage() {
@@ -26,6 +28,7 @@ export default function DashboardPage() {
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [cashflow, setCashflow] = useState<CashflowForecast | null>(null);
   const [bills, setBills] = useState<BillInstance[]>([]);
+  const [templates, setTemplates] = useState<BillTemplate[]>([]);
   const [undoInfo, setUndoInfo] = useState<{ paymentId: string; billName: string; amount: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [payingBill, setPayingBill] = useState<BillInstance | null>(null);
@@ -54,11 +57,16 @@ export default function DashboardPage() {
     setSyncMsg("");
     try {
       if (isCycleMode) {
-        // Cycle mode: load by date range
-        const data = await getDashboardByCycle(cycleRef);
+        // Cycle mode: load by date range, plus templates (for the
+        // "próximas fuera del ciclo" hint section).
+        const [data, tpls] = await Promise.all([
+          getDashboardByCycle(cycleRef),
+          getBillTemplates().catch(() => [] as BillTemplate[]),
+        ]);
         setSummary(data.summary);
         setCashflow(data.cashflow);
         setBills(data.bills);
+        setTemplates(tpls);
       } else {
         // Calendar mode: generate + load by month
         const gen = await generateBillInstances(year, month).catch(() => null);
@@ -251,6 +259,13 @@ export default function DashboardPage() {
           </div>
         )}
       </div>
+
+      {/* Templates whose next instance falls outside the active cycle. Helps
+          the user spot annual / bimonthly bills that won't show up until
+          their anchor month rolls in. */}
+      {isCycleMode && templates.length > 0 && (
+        <UpcomingOutsideCycle templates={templates} />
+      )}
 
       {/* Payment Modal */}
       {payingBill && (

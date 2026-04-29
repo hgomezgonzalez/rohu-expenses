@@ -24,9 +24,19 @@ from app.services import bill_service
 router = APIRouter(prefix="/bills", tags=["bills"])
 
 
-async def _build_template_response(db: AsyncSession, template: BillTemplate) -> BillTemplateResponse:
+async def _build_template_response(
+    db: AsyncSession,
+    template: BillTemplate,
+    cycle_window: tuple[date, date] | None = None,
+) -> BillTemplateResponse:
     """Serialize a template, computing next_instance_date based on the last
-    paid instance and the template's recurrence + anchor."""
+    paid instance and the template's recurrence + anchor.
+
+    `cycle_window` is the user's active pay cycle as (start, end). When
+    provided, we mark next_in_current_cycle=False if the next date falls
+    outside it, which the UI uses to highlight "won't appear in this cycle"
+    templates so users don't lose track of bimonthly/annual ones.
+    """
     today = datetime.now(ZoneInfo("America/Bogota")).date()
     last_paid_q = await db.execute(
         select(BillInstance.due_date)
@@ -39,6 +49,12 @@ async def _build_template_response(db: AsyncSession, template: BillTemplate) -> 
     )
     last_paid = last_paid_q.scalar()
     next_date = bill_service.next_instance_date(template, today, last_paid)
+
+    in_cycle = True
+    if cycle_window and next_date is not None:
+        cs, ce = cycle_window
+        in_cycle = cs <= next_date <= ce
+
     return BillTemplateResponse(
         id=template.id,
         category=CategoryResponse.model_validate(template.category),
@@ -52,7 +68,20 @@ async def _build_template_response(db: AsyncSession, template: BillTemplate) -> 
         notes=template.notes,
         created_at=template.created_at,
         next_instance_date=next_date,
+        next_in_current_cycle=in_cycle,
     )
+
+
+async def _user_active_cycle(db: AsyncSession, user_id) -> tuple[date, date] | None:
+    """Compute the active pay cycle for the user, or None if none configured."""
+    from app.services.income_service import _get_pay_cycle_start_day
+    from app.core.pay_cycle import get_pay_cycle
+    start_day = await _get_pay_cycle_start_day(db, user_id)
+    if not start_day:
+        return None
+    today = datetime.now(ZoneInfo("America/Bogota")).date()
+    cycle = get_pay_cycle(start_day, today)
+    return (date.fromisoformat(cycle["start_date"]), date.fromisoformat(cycle["end_date"]))
 
 
 # --- Bill Templates ---
@@ -64,7 +93,8 @@ async def create_template(
     db: AsyncSession = Depends(get_db),
 ):
     template = await bill_service.create_bill_template(db, user.id, data)
-    return await _build_template_response(db, template)
+    cycle = await _user_active_cycle(db, user.id)
+    return await _build_template_response(db, template, cycle)
 
 
 @router.get("/templates", response_model=list[BillTemplateResponse])
@@ -73,7 +103,8 @@ async def list_templates(
     db: AsyncSession = Depends(get_db),
 ):
     templates = await bill_service.get_bill_templates(db, user.id)
-    return [await _build_template_response(db, t) for t in templates]
+    cycle = await _user_active_cycle(db, user.id)
+    return [await _build_template_response(db, t, cycle) for t in templates]
 
 
 @router.get("/templates/{template_id}", response_model=BillTemplateResponse)
@@ -85,7 +116,8 @@ async def get_template(
     template = await bill_service.get_bill_template(db, template_id, user.id)
     if not template:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Template not found")
-    return await _build_template_response(db, template)
+    cycle = await _user_active_cycle(db, user.id)
+    return await _build_template_response(db, template, cycle)
 
 
 @router.patch("/templates/{template_id}", response_model=BillTemplateResponse)
@@ -99,7 +131,8 @@ async def update_template(
     if not template:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Template not found")
     updated = await bill_service.update_bill_template(db, template, data)
-    return await _build_template_response(db, updated)
+    cycle = await _user_active_cycle(db, user.id)
+    return await _build_template_response(db, updated, cycle)
 
 
 @router.delete("/templates/{template_id}", status_code=status.HTTP_204_NO_CONTENT)

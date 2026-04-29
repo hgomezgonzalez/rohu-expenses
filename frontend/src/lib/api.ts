@@ -444,6 +444,7 @@ export interface BillTemplate {
   notes: string | null;
   created_at: string;
   next_instance_date: string | null;
+  next_in_current_cycle: boolean;
 }
 
 export interface BillTemplateCreate {
