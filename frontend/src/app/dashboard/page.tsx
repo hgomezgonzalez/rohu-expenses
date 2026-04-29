@@ -197,6 +197,12 @@ export default function DashboardPage() {
       {/* Summary cards */}
       {summary && <SummaryCards summary={summary} />}
 
+      {/* Plantillas próximas al ciclo (anuales/bimestrales fuera del rango).
+          Posicion entre cards y lista para que el user la vea sin scroll. */}
+      {isCycleMode && templates.length > 0 && (
+        <UpcomingOutsideCycle templates={templates} />
+      )}
+
       {/* Cashflow - saldo restante prominente */}
       {cashflow && <CashflowCard cashflow={cashflow} />}
 
@@ -259,13 +265,6 @@ export default function DashboardPage() {
           </div>
         )}
       </div>
-
-      {/* Templates whose next instance falls outside the active cycle. Helps
-          the user spot annual / bimonthly bills that won't show up until
-          their anchor month rolls in. */}
-      {isCycleMode && templates.length > 0 && (
-        <UpcomingOutsideCycle templates={templates} />
-      )}
 
       {/* Payment Modal */}
       {payingBill && (
