@@ -49,7 +49,7 @@ jobs:
   deploy-api:
     name: Deploy backend (Heroku)
     needs: [validate-backend, validate-frontend]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     environment: production
     steps:
@@ -66,7 +66,7 @@ jobs:
   deploy-web:
     name: Deploy frontend (Heroku)
     needs: [validate-backend, validate-frontend]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     environment: production
     steps:
