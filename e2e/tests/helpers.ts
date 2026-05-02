@@ -1,6 +1,9 @@
 import { APIRequestContext, expect, Page, request } from "@playwright/test";
 
-export const API_URL = process.env.E2E_API_URL || "http://localhost:8000/api/v1";
+// Base must end with `/` so that relative paths preserve the /api/v1 prefix
+// when resolved by Playwright's APIRequestContext.
+export const API_URL = process.env.E2E_API_URL || "http://localhost:8000/api/v1/";
+export const API_ORIGIN = API_URL.replace(/\/api\/v1\/?$/, "");
 
 export interface TestUser {
   email: string;
@@ -25,7 +28,7 @@ export async function apiContext(): Promise<APIRequestContext> {
 }
 
 export async function registerAndLogin(api: APIRequestContext, user: TestUser): Promise<string> {
-  const reg = await api.post("/auth/register", {
+  const reg = await api.post("auth/register", {
     data: {
       email: user.email,
       password: user.password,
@@ -34,7 +37,7 @@ export async function registerAndLogin(api: APIRequestContext, user: TestUser): 
   });
   expect([201, 409]).toContain(reg.status());
 
-  const login = await api.post("/auth/login", {
+  const login = await api.post("auth/login", {
     data: { email: user.email, password: user.password },
   });
   expect(login.ok()).toBeTruthy();
