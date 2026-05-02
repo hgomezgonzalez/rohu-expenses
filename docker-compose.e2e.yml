@@ -1,0 +1,41 @@
+version: "3.9"
+
+# Stack efímero para pruebas E2E. Usa puertos diferentes a los de
+# desarrollo (postgres 55432, redis 56379, mailhog 8125/58025) y un
+# volumen anónimo para que la BD quede vacía en cada run.
+
+services:
+  postgres-e2e:
+    image: postgres:16-alpine
+    container_name: paycontrol-db-e2e
+    environment:
+      POSTGRES_USER: paycontrol
+      POSTGRES_PASSWORD: paycontrol
+      POSTGRES_DB: paycontrol_e2e
+    ports:
+      - "55432:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U paycontrol"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  redis-e2e:
+    image: redis:7-alpine
+    container_name: paycontrol-redis-e2e
+    ports:
+      - "56379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  mailhog-e2e:
+    image: mailhog/mailhog:latest
+    container_name: paycontrol-mail-e2e
+    ports:
+      - "8125:1025"
+      - "58025:8025"
