@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import BiometricPromptBanner from "@/components/BiometricPromptBanner";
+import HelpFab from "@/components/HelpFab";
+import { refreshSession } from "@/lib/api";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -15,6 +17,28 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     } else {
       setReady(true);
     }
+  }, [router]);
+
+  // Refresh the access token whenever the PWA returns to foreground (mobile
+  // browsers often suspend the tab and the access token expires while away).
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const onVisible = async () => {
+      if (document.visibilityState !== "visible") return;
+      if (!localStorage.getItem("refresh_token")) return;
+      const ok = await refreshSession();
+      if (!ok) {
+        localStorage.removeItem("access_token");
+        localStorage.removeItem("refresh_token");
+        router.push("/?session=expired");
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+    };
   }, [router]);
 
   if (!ready) {
@@ -33,6 +57,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <BiometricPromptBanner />
         {children}
       </main>
+      <HelpFab />
     </div>
   );
 }

@@ -9,7 +9,47 @@ function getHeaders(): HeadersInit {
   return headers;
 }
 
-async function request<T>(path: string, options?: RequestInit): Promise<T> {
+let refreshInFlight: Promise<string | null> | null = null;
+
+async function tryRefresh(): Promise<string | null> {
+  if (typeof window === "undefined") return null;
+  const refreshToken = localStorage.getItem("refresh_token");
+  if (!refreshToken) return null;
+  if (refreshInFlight) return refreshInFlight;
+  refreshInFlight = (async () => {
+    try {
+      const res = await fetch(`${API_BASE}/auth/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      });
+      if (!res.ok) return null;
+      const body = await res.json();
+      localStorage.setItem("access_token", body.access_token);
+      localStorage.setItem("refresh_token", body.refresh_token);
+      return body.access_token as string;
+    } catch {
+      return null;
+    } finally {
+      // free the lock on next tick so concurrent callers reuse this run's result first
+      setTimeout(() => { refreshInFlight = null; }, 0);
+    }
+  })();
+  return refreshInFlight;
+}
+
+function handleAuthFailure() {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem("access_token");
+  localStorage.removeItem("refresh_token");
+  // Avoid redirect loops if already on login page
+  if (!window.location.pathname.startsWith("/")) return;
+  if (window.location.pathname !== "/") {
+    window.location.href = "/?session=expired";
+  }
+}
+
+async function request<T>(path: string, options?: RequestInit, _retried = false): Promise<T> {
   let res: Response;
   try {
     res = await fetch(`${API_BASE}${path}`, {
@@ -18,6 +58,14 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     });
   } catch {
     throw new Error("Error de conexion. Verifica tu internet e intenta de nuevo.");
+  }
+  if (res.status === 401 && !_retried && !path.startsWith("/auth/login") && !path.startsWith("/auth/refresh")) {
+    const newToken = await tryRefresh();
+    if (newToken) {
+      return request<T>(path, options, true);
+    }
+    handleAuthFailure();
+    throw new Error("Sesión expirada. Vuelve a iniciar sesión.");
   }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
@@ -31,6 +79,13 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   }
   if (res.status === 204) return undefined as T;
   return res.json();
+}
+
+// Refresh the current access token using the stored refresh token.
+// Returns true on success, false if the user must re-login.
+export async function refreshSession(): Promise<boolean> {
+  const t = await tryRefresh();
+  return t !== null;
 }
 
 // Auth

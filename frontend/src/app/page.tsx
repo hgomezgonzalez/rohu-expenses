@@ -31,6 +31,12 @@ export default function LoginPage() {
       router.push("/dashboard");
       return;
     }
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("session") === "expired") {
+        setError("Tu sesión expiró. Vuelve a iniciar sesión.");
+      }
+    }
     setChecking(false);
     if (hasPasskeyEnrolledLocally()) {
       isPasskeySupported().then(setShowPasskey).catch(() => setShowPasskey(false));
